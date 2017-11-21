@@ -257,12 +257,15 @@ object SparkSQLExample {
     // Creates a temporary view using the DataFrame
     peopleDF.createOrReplaceTempView("people")
 
+    spark.conf.set("spark.sql.cbo.enabled", true);
+    spark.conf.set("spark.sql.cbo.joinReorder.enabled", true);
+
     // SQL can be run over a temporary view created using DataFrames
-    val results = spark.sql("SELECT name FROM people")
+    val results = spark.sql("SELECT * FROM people p1, people p2, people p3 WHERE p1.name = p2.name and p1.name = p3.name")
 
     // The results of SQL queries are DataFrames and support all the normal RDD operations
     // The columns of a row in the result can be accessed by field index or by field name
-    results.map(attributes => "Name: " + attributes(0)).show()
+    results.show()
     // +-------------+
     // |        value|
     // +-------------+
