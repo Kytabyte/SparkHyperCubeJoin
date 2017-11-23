@@ -252,10 +252,7 @@ object ShuffleExchange {
         rdd.mapPartitionsInternal { iter =>
           val getPartitionKey = getPartitionKeyExtractor()
           val mutablePair = new MutablePair[Int, InternalRow]()
-          val generatePair = (x : InternalRow) =>  List(mutablePair.update(part.getPartition(getPartitionKey(x)), x),
-            mutablePair.update(part.getPartition(getPartitionKey(x)), x))
-          // iter.map { row => mutablePair.update(part.getPartition(getPartitionKey(row)), row) }
-          iter.flatMap{row => generatePair(row)}
+          iter.map { row => mutablePair.update(part.getPartition(getPartitionKey(row)), row) }
         }
       }
     }

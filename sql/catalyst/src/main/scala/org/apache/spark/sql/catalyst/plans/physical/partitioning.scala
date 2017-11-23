@@ -229,6 +229,42 @@ case object SinglePartition extends Partitioning {
   override def guarantees(other: Partitioning): Boolean = other.numPartitions == 1
 }
 
+
+ /**
+  * Represents a partitioning where rows are partitioned or replicated according to hypercube
+  * partitioning scheme, just a place holder for now
+  */
+case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: Int)
+  extends Expression with Partitioning with Unevaluable {
+
+  override def children: Seq[Expression] = expressions
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def satisfies(required: Distribution): Boolean = required match {
+    case UnspecifiedDistribution => true
+    case ClusteredDistribution(requiredClustering) =>
+      expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+    case _ => false
+  }
+
+  override def compatibleWith(other: Partitioning): Boolean = other match {
+    case o: HyperCubePartitioning => true
+    case _ => false
+  }
+
+  override def guarantees(other: Partitioning): Boolean = other match {
+    case o: HyperCubePartitioning => true
+    case _ => false
+  }
+
+  /**
+    * Returns an expression that will produce a valid partition ID(i.e. non-negative and is less
+    * than numPartitions) based on hashing expressions.
+    */
+  def partitionIdExpression: Expression = Pmod(new Murmur3Hash(expressions), Literal(numPartitions))
+}
+
 /**
  * Represents a partitioning where rows are split up across partitions based on the hash
  * of `expressions`.  All rows where `expressions` evaluate to the same values are guaranteed to be

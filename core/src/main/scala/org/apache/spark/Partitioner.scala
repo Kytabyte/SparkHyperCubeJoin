@@ -69,6 +69,59 @@ object Partitioner {
   }
 }
 
+
+ /**
+  * A [[org.apache.spark.Partitioner]] that implements hyperCube partitioning scheme
+  *
+  */
+class HyperCubePartitioner(partitions: Int, hashRange: Seq[Int]) extends Partitioner {
+  require(partitions >= 0, s"Number of partitions ($partitions) cannot be negative.")
+
+  def numPartitions: Int = partitions // assume to be total number of executors
+
+  def ranges: Seq[Int] = hashRange
+
+   def calcPartitionId(allHash : Seq[Int]): Int = {
+      allHash.zip(hashRange).map( pair => pair._1 * pair._2).reduce( _ + _ )
+   }
+
+   def arrayCrossProduct(left: Seq[Seq[Int]], right: Seq[Seq[Int]]): Seq[Seq[Int]] = {
+      left.flatMap( lhashVec => for (rhashVec <- right) yield lhashVec ++ rhashVec)
+   }
+
+
+   def generateAllHash(keys : Seq[Any]) : Seq[Seq[Int]] = {
+      val hashPositionList = for ((key, idx) <- keys.zipWithIndex) yield {
+        key match {
+          case null => // replicate hashes
+            (0 to (hashRange(idx) - 1)).toArray.map(num => Array(num))
+          case _ => Array(Array(Utils.nonNegativeMod(key.hashCode, hashRange(idx))))
+        }
+      }
+     hashPositionList.reduce(arrayCrossProduct)
+   }
+
+   def getPartitionList(key: Any): Seq[Int] = key match {
+     case key : Seq[Any] => generateAllHash(key).map(hashList => calcPartitionId(hashList))
+     case _ => Array.empty
+   }
+
+  def getPartition(key: Any): Int = key match { // just a place holder
+    case _ => 0
+  }
+
+  override def equals(other: Any): Boolean = other match {
+    case h: HyperCubePartitioner =>
+      h.numPartitions == numPartitions
+    case _ =>
+      false
+  }
+
+  override def hashCode: Int = numPartitions
+}
+
+
+
 /**
  * A [[org.apache.spark.Partitioner]] that implements hash-based partitioning using
  * Java's `Object.hashCode`.
