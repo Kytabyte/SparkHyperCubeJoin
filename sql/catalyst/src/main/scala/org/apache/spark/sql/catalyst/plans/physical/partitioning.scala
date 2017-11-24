@@ -57,6 +57,20 @@ case class ClusteredDistribution(clustering: Seq[Expression]) extends Distributi
       "a single partition.")
 }
 
+
+ /**
+  * Represents data where tuples that share the same values for the `clustering`
+  * [[Expression Expressions]] will be co-located. This is a special form of cluster distribution
+  * that require HyperCube partitioning
+  */
+case class HyperCubeDistribution(clustering: Seq[Expression]) extends Distribution {
+  require(
+    clustering != Nil,
+    "The clustering expressions of a ClusteredDistribution should not be Nil. " +
+      "An AllTuples should be used to represent a distribution that only has " +
+      "a single partition.")
+}
+
 /**
  * Represents data where tuples have been ordered according to the `ordering`
  * [[Expression Expressions]].  This is a strictly stronger guarantee than
@@ -234,7 +248,8 @@ case object SinglePartition extends Partitioning {
   * Represents a partitioning where rows are partitioned or replicated according to hypercube
   * partitioning scheme, just a place holder for now
   */
-case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: Int)
+case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: Int,
+                                 hashRange: Seq[Int])
   extends Expression with Partitioning with Unevaluable {
 
   override def children: Seq[Expression] = expressions
@@ -243,8 +258,7 @@ case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: In
 
   override def satisfies(required: Distribution): Boolean = required match {
     case UnspecifiedDistribution => true
-    case ClusteredDistribution(requiredClustering) =>
-      expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+    case HyperCubeDistribution(requiredClustering) => true
     case _ => false
   }
 
@@ -258,11 +272,6 @@ case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: In
     case _ => false
   }
 
-  /**
-    * Returns an expression that will produce a valid partition ID(i.e. non-negative and is less
-    * than numPartitions) based on hashing expressions.
-    */
-  def partitionIdExpression: Expression = Pmod(new Murmur3Hash(expressions), Literal(numPartitions))
 }
 
 /**

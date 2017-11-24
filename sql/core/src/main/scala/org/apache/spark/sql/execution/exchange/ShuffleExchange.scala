@@ -203,6 +203,8 @@ object ShuffleExchange {
       serializer: Serializer): ShuffleDependency[Int, InternalRow, InternalRow] = {
     val part: Partitioner = newPartitioning match {
       case RoundRobinPartitioning(numPartitions) => new HashPartitioner(numPartitions)
+      case HyperCubePartitioning(_, numPartitions, hashRange) =>
+        new HyperCubePartitioner(numPartitions, hashRange)
       case HashPartitioning(_, n) =>
         new Partitioner {
           override def numPartitions: Int = n
@@ -240,6 +242,9 @@ object ShuffleExchange {
         val projection = UnsafeProjection.create(h.partitionIdExpression :: Nil, outputAttributes)
         row => projection(row).getInt(0)
       case RangePartitioning(_, _) | SinglePartition => identity
+      case HyperCubePartitioning(expressions, _, _) =>
+        val projection = UnsafeProjection.create(expressions, outputAttributes)
+        row => projection(row).toSeq(expressions.map(_.dataType))
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
     val rddWithPartitionIds: RDD[Product2[Int, InternalRow]] = {
