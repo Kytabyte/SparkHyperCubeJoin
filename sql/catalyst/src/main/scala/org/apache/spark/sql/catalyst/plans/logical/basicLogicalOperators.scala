@@ -376,6 +376,25 @@ case class Join(
   }
 }
 
+case class MultiWayJoin(
+                       nodes: Seq[LogicalPlan],
+                       joinType: JoinType,
+                       condition: Set[Expression]
+                       )
+  // Create by Kyle Nov. 23, 2017
+  extends MultaryNode with PredicateHelper {
+
+  override def output: Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike =>
+        nodes.foldLeft(Seq.empty[Attribute]) {case (total, cur) => total ++ cur.output}
+      case _ =>
+        nodes.foldLeft(Seq.empty[Attribute]) {case (total, cur) => total ++ cur.output}
+    }
+  }
+
+}
+
 /**
  * Insert some data into a table. Note that this plan is unresolved and has to be replaced by the
  * concrete implementations during analysis.
