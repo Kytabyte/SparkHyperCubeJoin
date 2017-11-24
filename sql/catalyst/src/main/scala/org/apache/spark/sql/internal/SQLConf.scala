@@ -122,6 +122,12 @@ object SQLConf {
     .longConf
     .createWithDefault(10L * 1024 * 1024)
 
+  val HYPERCUBE_JOIN_ENABLED = buildConf("spark.sql.enableHyperCubeJoin")
+    .doc("When true, enable use of HyperCube Join, which is an optimzation for multiway join" +
+      "algorithm. ")
+    .booleanConf
+    .createWithDefault(true)
+
   val LIMIT_SCALE_UP_FACTOR = buildConf("spark.sql.limit.scaleUpFactor")
     .internal()
     .doc("Minimal increase rate in number of partitions between attempts when executing a take " +
@@ -967,6 +973,8 @@ class SQLConf extends Serializable with Logging {
     getConf(SUBEXPRESSION_ELIMINATION_ENABLED)
 
   def autoBroadcastJoinThreshold: Long = getConf(AUTO_BROADCASTJOIN_THRESHOLD)
+
+  def hyperCubeJoinEnabled: Boolean = getConf(HYPERCUBE_JOIN_ENABLED)
 
   def limitScaleUpFactor: Int = getConf(LIMIT_SCALE_UP_FACTOR)
 
