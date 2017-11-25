@@ -424,3 +424,9 @@ trait BinaryExecNode extends SparkPlan {
 
   override final def children: Seq[SparkPlan] = Seq(left, right)
 }
+
+trait MultaryExecNode extends SparkPlan {
+  def nodes: Seq[SparkPlan]
+
+  override final def children: Seq[SparkPlan] = nodes
+}

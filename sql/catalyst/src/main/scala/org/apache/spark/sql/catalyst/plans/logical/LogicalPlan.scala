@@ -360,3 +360,12 @@ abstract class BinaryNode extends LogicalPlan {
 
   override final def children: Seq[LogicalPlan] = Seq(left, right)
 }
+
+/**
+ * A logical plan node with a sequence of nodes.
+ */
+abstract class MultaryNode extends LogicalPlan {
+  def nodes: Seq[LogicalPlan]
+
+  override final def children: Seq[LogicalPlan] = nodes
+}
