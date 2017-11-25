@@ -82,7 +82,14 @@ class HyperCubePartitioner(partitions: Int, hashRange: Seq[Int]) extends Partiti
   def ranges: Seq[Int] = hashRange
 
    def calcPartitionId(allHash : Seq[Int]): Int = {
-      allHash.zip(hashRange).map( pair => pair._1 * pair._2).reduce( _ + _ )
+      val lastIdx = hashRange.size - 1
+      val dimensionMultipliers = for ( index <- (0 to lastIdx)) yield {
+        index match {
+          case `lastIdx` => 1
+          case _ => hashRange.slice(index + 1, hashRange.size).reduce((left, right) => left * right)
+        }
+      }
+      allHash.zip(dimensionMultipliers).map( pair => pair._1 * pair._2).reduce( _ + _ )
    }
 
    def arrayCrossProduct(left: Seq[Seq[Int]], right: Seq[Seq[Int]]): Seq[Seq[Int]] = {
