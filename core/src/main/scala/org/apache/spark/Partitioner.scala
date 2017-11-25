@@ -94,16 +94,16 @@ class HyperCubePartitioner(partitions: Int, hashRange: Seq[Int]) extends Partiti
       val hashPositionList = for ((key, idx) <- keys.zipWithIndex) yield {
         key match {
           case null => // replicate hashes
-            (0 to (hashRange(idx) - 1)).toArray.map(num => Array(num))
-          case _ => Array(Array(Utils.nonNegativeMod(key.hashCode, hashRange(idx))))
+            (0 to (hashRange(idx) - 1)).map(num => Seq(num))
+          case _ => Seq(Seq(Utils.nonNegativeMod(key.hashCode, hashRange(idx))))
         }
       }
-     hashPositionList.reduce(arrayCrossProduct)
+     hashPositionList.reduce((left, right) => arrayCrossProduct(left, right))
    }
 
    def getPartitionList(key: Any): Seq[Int] = key match {
      case key : Seq[Any] => generateAllHash(key).map(hashList => calcPartitionId(hashList))
-     case _ => Array.empty
+     case _ => Seq.empty[Int]
    }
 
   def getPartition(key: Any): Int = key match { // just a place holder
