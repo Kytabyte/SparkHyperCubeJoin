@@ -32,15 +32,15 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
                              conditions: Seq[Option[Expression]],
                              nodes: Seq[SparkPlan])
-  extends MultaryExecNode with HashJoin {
+  extends MultaryExecNode {
 
-  val buildSide = BuildLeft
-  val joinType = Inner
-  val left = nodes(0)
-  val right = nodes(1)
-  val condition : Option[Expression] = None
-  val leftKeys = joinKeys(0)
-  val rightKeys = joinKeys(1)
+//  val buildSide = BuildLeft
+//  val joinType = Inner
+//  val left = nodes(0)
+//  val right = nodes(1)
+//  val condition : Option[Expression] = None
+//  val leftKeys = joinKeys(0)
+//  val rightKeys = joinKeys(1)
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
@@ -54,6 +54,24 @@ case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
       }
       HyperCubeDistribution(joinKey)
     })
+
+  protected override def doExecute() : RDD[InternalRow] = {
+    nodes.reduceLeft((left, right) => {
+
+
+    }
+  }
+
+}
+
+case class HyperCubePairwiseJoin(leftKeys: Seq[Expression],
+                                 rightKeys: Seq[Expression],
+                                 joinType: JoinType,
+                                 buildSide: BuildSide,
+                                 condition: Option[Expression],
+                                 left: SparkPlan,
+                                 right: SparkPlan)
+  extends BinaryExecNode with HashJoin {
 
   private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
     val buildDataSize = longMetric("buildDataSize")
@@ -70,10 +88,11 @@ case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
+
     streamedPlan.execute().zipPartitions(buildPlan.execute()) { (streamIter, buildIter) =>
       val hashed = buildHashedRelation(buildIter)
       join(streamIter, hashed, numOutputRows)
     }
   }
-}
+  }
 

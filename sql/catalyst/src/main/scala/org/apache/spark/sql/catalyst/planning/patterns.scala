@@ -183,38 +183,9 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
         case (joinKey, index) if getTableIndex(joinKey) >= 0 =>
           joinKeys(getTableIndex(joinKey))(index) = joinKey
       }
-      Some(joinKeys.map(_.toSeq).toSeq, Seq.empty[Option[Expression]], children)
+      Some(joinKeys.map(_.toSeq).toSeq, conditions.map(Some(_)), children)
     case _ => None
   }
-
-      // var joinKeys = new scala.collection.mutable.ListBuffer()
-//      val joinKeys = joins.map {
-//        case (Seq(left, right), cond : Expression) =>
-//          val predicate = splitConjunctivePredicates(cond)
-//          val joinKey = predicate.flatMap {
-//            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => None
-//            case EqualTo(l, r) if canEvaluate(l, left) && canEvaluate(r, right) => Some((l, r))
-//            case EqualTo(l, r) if canEvaluate(l, right) && canEvaluate(r, left) => Some((r, l))
-//            case _ => None
-//          }
-//          val otherPredicate =    predicate.filterNot {
-//            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => false
-//            case EqualTo(l, r) =>
-//              canEvaluate(l, left) && canEvaluate(r, right) ||
-//                canEvaluate(l, right) && canEvaluate(r, left)
-//            case _ => false
-//          }
-//          joinKey
-//      }.toList.flatten
-//      if (joinKeys.nonEmpty) {
-//        val (leftKeys, rightKeys) = joinKeys.unzip
-//        logDebug(s"leftKeys:$leftKeys | rightKeys:$rightKeys")
-//        Some((leftKeys, rightKeys, Seq(None), children))
-//      } else {
-//        None
-//      }
-//    case _ => None
-//  }
 }
 
 /**
