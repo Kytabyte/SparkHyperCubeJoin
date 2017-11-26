@@ -27,23 +27,23 @@ import org.apache.spark.sql.execution.{BinaryExecNode, MultaryExecNode, SparkPla
 import org.apache.spark.sql.execution.metric.SQLMetrics
 
 /**
- * Performs a hash join of two child relations by first shuffling the data using the join keys.
- */
+  * Performs a hash join of two child relations by first shuffling the data using the join keys.
+  */
 case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
-                            joinKeys: Seq[Seq[Expression]],
+                             joinKeys: Seq[Seq[Expression]],
                              conditions: Seq[Seq[Option[Expression]]],
                              nodes: Seq[SparkPlan])
   extends MultaryExecNode {
 
   override def output: Seq[Attribute] = nodes.reduceLeft(_.output ++ _.output)
 
-//  val buildSide = BuildLeft
-//  val joinType = Inner
-//  val left = nodes(0)
-//  val right = nodes(1)
-//  val condition : Option[Expression] = None
-//  val leftKeys = joinKeys(0)
-//  val rightKeys = joinKeys(1)
+  //  val buildSide = BuildLeft
+  //  val joinType = Inner
+  //  val left = nodes(0)
+  //  val right = nodes(1)
+  //  val condition : Option[Expression] = None
+  //  val leftKeys = joinKeys(0)
+  //  val rightKeys = joinKeys(1)
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
@@ -53,51 +53,16 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
   override def requiredChildDistribution: Seq[Distribution] =
     mapKeys.map(mapKey => HyperCubeDistribution(mapKey))
 
-  protected override def doExecute() : RDD[InternalRow] = {
-//    nodes.zipWithIndex.reduceLeft((left, right) => {
-//      left match {
-//        case (l: SparkPlan, lIndex: Int)
-//      }
-//
-//    }
+  protected override def doExecute(): RDD[InternalRow] = {
+    //    nodes.zipWithIndex.reduceLeft((left, right) => {
+    //      left match {
+    //        case (l: SparkPlan, lIndex: Int)
+    //      }
+    //
+    //    }
     for (i <- 1 to nodes.size) {
 
     }
   }
-
-
-
 }
-
-case class HyperCubePairwiseJoin(leftKeys: Seq[Expression],
-                                 rightKeys: Seq[Expression],
-                                 joinType: JoinType,
-                                 buildSide: BuildSide,
-                                 condition: Option[Expression],
-                                 left: SparkPlan,
-                                 right: SparkPlan)
-  extends BinaryExecNode with HashJoin {
-
-  private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
-    val buildDataSize = longMetric("buildDataSize")
-    val buildTime = longMetric("buildTime")
-    val start = System.nanoTime()
-    val context = TaskContext.get()
-    val relation = HashedRelation(iter, buildKeys, taskMemoryManager = context.taskMemoryManager())
-    buildTime += (System.nanoTime() - start) / 1000000
-    buildDataSize += relation.estimatedSize
-    // This relation is usually used until the end of task.
-    context.addTaskCompletionListener(_ => relation.close())
-    relation
-  }
-
-  protected override def doExecute(): RDD[InternalRow] = {
-    val numOutputRows = longMetric("numOutputRows")
-
-    streamedPlan.execute().zipPartitions(buildPlan.execute()) { (streamIter, buildIter) =>
-      val hashed = buildHashedRelation(buildIter)
-      join(streamIter, hashed, numOutputRows)
-    }
-  }
-  }
 
