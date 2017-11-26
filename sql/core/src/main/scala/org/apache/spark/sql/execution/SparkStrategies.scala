@@ -191,9 +191,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       // --- HyperCubeJoin ----------------------------------------------------------------
       // Modified by Kyle Nov 26, 2017
 
-      case ExtractMultiJoinKeys(mapKeys, joinKeys, conditionMatrix, children)
-        if conf.hyperCubeJoinEnabled =>
-        joins.HyperCubeJoinExec(mapKeys, joinKeys, conditionMatrix,
+      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, planIndexMap)
+        if conf.hyperCubeJoinEnabled && children.size > 2 =>
+        joins.HyperCubeJoinExec(mapKeys, logicalPlan, planIndexMap,
           children.map(planLater(_))) :: Nil
 
       // --- Without joining keys ------------------------------------------------------------

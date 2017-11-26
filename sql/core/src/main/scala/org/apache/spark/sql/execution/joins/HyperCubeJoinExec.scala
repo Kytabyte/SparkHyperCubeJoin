@@ -17,21 +17,26 @@
 
 package org.apache.spark.sql.execution.joins
 
+import scala.collection.mutable
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryExecNode, MultaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 
+
+
 /**
-  * Performs a hash join of two child relations by first shuffling the data using the join keys.
-  */
+ * Performs a hash join of two child relations by first shuffling the data using the join keys.
+ */
 case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
-                             joinKeys: Seq[Seq[Expression]],
-                             conditions: Seq[Seq[Option[Expression]]],
+                             logicalPlan: LogicalPlan,
+                             planIndexMap: mutable.HashMap[LogicalPlan, Int],
                              nodes: Seq[SparkPlan])
   extends MultaryExecNode {
 

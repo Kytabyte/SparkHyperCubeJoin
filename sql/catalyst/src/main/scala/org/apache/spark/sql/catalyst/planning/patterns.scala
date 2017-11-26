@@ -142,34 +142,52 @@ object ExtractEquiJoinKeys extends Logging with PredicateHelper {
   }
 }
 
+
 object ExtractMultiJoinKeys extends Logging with PredicateHelper {
-  /** (joinKeys, joinMatrix, joinConditions, children) */
+  /** (mapKeys, joinkeys, conditions, children) */
   type ReturnType =
-    (Seq[Seq[Expression]], Seq[Seq[Expression]], Seq[Seq[Option[Expression]]], Seq[LogicalPlan])
+    (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan, HashMap[LogicalPlan, Int])
+
+  var planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
+  var index : Int = 0
+
+  private def extractInnerJoins(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
+    plan match {
+      case Join(left: Join, right: Join, _: InnerLike, Some(cond)) =>
+        val (leftPlans, leftConditions) = extractInnerJoins(left)
+        val (rightPlans, rightConditions) = extractInnerJoins(right)
+        (leftPlans ++ rightPlans, leftConditions ++
+          splitConjunctivePredicates(cond) ++ rightConditions)
+      // case Join(left: Project(_, Join))
+      case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+        if projectList.forall(_.isInstanceOf[Attribute]) => {
+        extractInnerJoins(j)
+      }
+      case _ =>
+        planIndexMap.put(plan, index)
+        index += 1
+        (Seq(plan), Seq())
+    }
+  }
 
   def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
-    case j @ MultiWayJoin(children, joinType, conditions) =>
-      logDebug(s"Considering join on: $conditions")
+    case j @ Join(left, right, _: InnerLike, Some(cond)) =>
+      logDebug(s"Considering join on: $cond")
       // Find equi-join predicates that can be evaluated before the join, and thus can be used
       // as join keys.
 
+      val (children, conditions):
+        (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
+
       def getTableIndex(joinKey : Expression) : Int = {
         for (i <- 0 to children.size) {
-          if (canEvaluate(joinKey, children(i))) {
-            i
-          }
+          if (canEvaluate(joinKey, children(i))) i
         }
         -1
       }
 
       var joinsMap : HashMap[Expression, Int] = HashMap()
       var slot : Int = 0
-      var joinMatrix =
-        Array.fill[Array[Expression]](children.size)(Array
-          .fill[Expression](children.size)(Literal(null, NullType)))
-
-      var otherPredicates = Array.fill[Array[Option[Expression]]](children.size)(Array
-        .fill[Option[Expression]](children.size)(None))
 
       conditions foreach {
         case condition =>
@@ -183,36 +201,17 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
               joinsMap.put(r, slot)
               slot += 1
 
-              joinMatrix(getTableIndex(l))(getTableIndex(r)) = l
-              joinMatrix(getTableIndex(r))(getTableIndex(l)) = r
-          }
-
-          var leftIndex: Int = -1
-          var rightIndex : Int = -1
-          val otherPredicate = predicate.filterNot {
-            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => false
-            case EqualTo(l, r) if getTableIndex(l) >= 0 && getTableIndex(r) >= 0 =>
-              leftIndex = getTableIndex(l)
-              rightIndex = getTableIndex(r)
-              true
-            case _ => false
-          }
-
-          if (leftIndex >= 0 && rightIndex >= 0) {
-            otherPredicates(leftIndex)(rightIndex) = otherPredicate.reduceOption(And)
-            otherPredicates(rightIndex)(leftIndex) = otherPredicate.reduceOption(And)
           }
       }
 
-      var joinKeys = Array.fill[Array[Expression]](children.size)(Array
+      var mapKeys = Array.fill[Array[Expression]](children.size)(Array
         .fill[Expression](slot)(Literal(null, NullType)))
 
       joinsMap foreach {
-        case (joinKey, index) =>
-          joinKeys(getTableIndex(joinKey))(index) = joinKey
+        case (mapKey, index) =>
+          mapKeys(getTableIndex(mapKey))(index) = mapKey
       }
-      Some(joinKeys.map(_.toSeq).toSeq, joinMatrix.map(_.toSeq).toSeq,
-        otherPredicates.map(_.toSeq).toSeq, children)
+      Some(mapKeys.map(_.toSeq).toSeq, children, plan, planIndexMap)
     case _ => None
   }
 }
