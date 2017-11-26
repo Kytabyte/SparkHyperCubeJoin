@@ -253,6 +253,17 @@ object ShuffleExchange {
           val getPartitionKey = getPartitionKeyExtractor()
           iter.map { row => (part.getPartition(getPartitionKey(row)), row.copy()) }
         }
+      } else if ( newPartitioning.isInstanceOf[HyperCubePartitioning] ) {
+        // added by Hao, call getPartitionList instead of getPartitionId
+        rdd.mapPartitionsInternal { iter =>
+          val hyperCubePartitioner = part.asInstanceOf[HyperCubePartitioner]
+          val getPartitionKey = getPartitionKeyExtractor()
+          val mutablePair = new MutablePair[Int, InternalRow]()
+          iter.flatMap { row =>
+            val idList = hyperCubePartitioner.getPartitionList(getPartitionKey(row))
+            idList.map( id => mutablePair.update(id, row))
+          }
+        }
       } else {
         rdd.mapPartitionsInternal { iter =>
           val getPartitionKey = getPartitionKeyExtractor()
