@@ -168,7 +168,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
           }
       }
       var joinKeys = new Array[Array[Expression]](children.size)
-        .map(_ => new Array[Expression](slot-1))
+        .map(_ => new Array[Expression](slot))
 
       def getTableIndex(joinKey : Expression) : Int = {
         for (i <- 0 to children.size) {

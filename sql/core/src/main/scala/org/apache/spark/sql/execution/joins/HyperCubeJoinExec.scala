@@ -38,7 +38,7 @@ case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
   val joinType = Inner
   val left = nodes(0)
   val right = nodes(1)
-  val condition = conditions(0)
+  val condition : Option[Expression] = None
   val leftKeys = joinKeys(0)
   val rightKeys = joinKeys(1)
 
