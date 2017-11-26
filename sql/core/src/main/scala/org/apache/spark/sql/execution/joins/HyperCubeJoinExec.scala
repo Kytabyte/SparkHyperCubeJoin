@@ -22,9 +22,10 @@ import scala.collection.mutable
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, Coalesce, EqualNullSafe, EqualTo, Expression, Literal, PredicateHelper}
+import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys.{canEvaluate, logDebug, splitConjunctivePredicates}
 import org.apache.spark.sql.catalyst.plans._
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{Join, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryExecNode, MultaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -38,17 +39,9 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
                              logicalPlan: LogicalPlan,
                              planIndexMap: mutable.HashMap[LogicalPlan, Int],
                              nodes: Seq[SparkPlan])
-  extends MultaryExecNode {
+  extends MultaryExecNode with PredicateHelper {
 
-  override def output: Seq[Attribute] = nodes.reduceLeft(_.output ++ _.output)
-
-  //  val buildSide = BuildLeft
-  //  val joinType = Inner
-  //  val left = nodes(0)
-  //  val right = nodes(1)
-  //  val condition : Option[Expression] = None
-  //  val leftKeys = joinKeys(0)
-  //  val rightKeys = joinKeys(1)
+  override def output: Seq[Attribute] = nodes.map(_.output).reduce(_ ++ _)
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
@@ -58,16 +51,68 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
   override def requiredChildDistribution: Seq[Distribution] =
     mapKeys.map(mapKey => HyperCubeDistribution(mapKey))
 
-  protected override def doExecute(): RDD[InternalRow] = {
-    //    nodes.zipWithIndex.reduceLeft((left, right) => {
-    //      left match {
-    //        case (l: SparkPlan, lIndex: Int)
-    //      }
-    //
-    //    }
-    for (i <- 1 to nodes.size) {
+  lazy val rdds : Seq[RDD[InternalRow]] = nodes.map(_.execute())
+
+  def prepareHashJoinExec(plan: LogicalPlan) : SparkPlan = {
+    plan match {
+      case j @ Join(left, right, _: InnerLike, Some(condition)) =>
+        val predicates = condition.map(splitConjunctivePredicates)
+        val joinKeys = predicates.flatMap {
+          case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => None
+          case EqualTo(l, r) if canEvaluate(l, left) && canEvaluate(r, right) => Some((l, r))
+          case EqualTo(l, r) if canEvaluate(l, right) && canEvaluate(r, left) => Some((r, l))
+          case _ => None
+        }
+        val otherPredicates = predicates.filterNot {
+          case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => false
+          case EqualTo(l, r) =>
+            canEvaluate(l, left) && canEvaluate(r, right) ||
+              canEvaluate(l, right) && canEvaluate(r, left)
+          case _ => false
+        }
+
+        val (leftKeys, rightKeys) = joinKeys.unzip
+        logDebug(s"leftKeys:$leftKeys | rightKeys:$rightKeys")
+
+        val leftRDDIndex = planIndexMap.getOrElse(left, -1)
+        val rightRDDIndex = planIndexMap.getOrElse(right, -1)
+
+        val leftPlan = if (leftRDDIndex == -1) {
+          prepareHashJoinExec(left)
+        } else {
+          children(leftRDDIndex)
+        }
+
+        val rightPlan = if (rightRDDIndex == -1) {
+          prepareHashJoinExec(right)
+        } else {
+          children(rightRDDIndex)
+        }
+
+        val leftRDD = if (leftRDDIndex == -1) {
+          null
+        } else {
+          rdds(leftRDDIndex)
+        }
+
+        val rightRDD = if (rightRDDIndex == -1) {
+          null
+        } else {
+          rdds(rightRDDIndex)
+        }
+
+        HyperCubeHashJoinExec(leftKeys, rightKeys, Inner, BuildLeft,
+          otherPredicates.reduceOption(And), leftPlan, rightPlan, leftRDD, rightRDD)
+
+      case Project(projectList, j @ Join(_, _, _: InnerLike, Some(_))) =>
+        prepareHashJoinExec(j)
 
     }
+  }
+
+  protected override def doExecute(): RDD[InternalRow] = {
+    val execPlan = prepareHashJoinExec(logicalPlan)
+    execPlan.execute()
   }
 }
 
