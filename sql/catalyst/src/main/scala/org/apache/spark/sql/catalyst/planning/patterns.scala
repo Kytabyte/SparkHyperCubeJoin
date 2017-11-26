@@ -18,12 +18,12 @@
 package org.apache.spark.sql.catalyst.planning
 
 import scala.collection.mutable.HashMap
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.types.NullType
 
 /**
  * A pattern that matches any number of project or filter operations on top of another relational
@@ -143,47 +143,76 @@ object ExtractEquiJoinKeys extends Logging with PredicateHelper {
 }
 
 object ExtractMultiJoinKeys extends Logging with PredicateHelper {
-  /** (joinType, leftKeys, rightKeys, condition, leftChild, rightChild) */
+  /** (joinKeys, joinMatrix, joinConditions, children) */
   type ReturnType =
-    (Seq[Seq[Expression]], Seq[Option[Expression]], Seq[LogicalPlan])
+    (Seq[Seq[Expression]], Seq[Seq[Expression]], Seq[Seq[Option[Expression]]], Seq[LogicalPlan])
 
   def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
     case j @ MultiWayJoin(children, joinType, conditions) =>
       logDebug(s"Considering join on: $conditions")
       // Find equi-join predicates that can be evaluated before the join, and thus can be used
       // as join keys.
-//    val joins : Iterator[(Seq[LogicalPlan], Expression)] =
-      // children.sliding(2).zip(conditions.iterator)
+
+      def getTableIndex(joinKey : Expression) : Int = {
+        for (i <- 0 to children.size) {
+          if (canEvaluate(joinKey, children(i))) {
+            i
+          }
+        }
+        -1
+      }
+
       var joinsMap : HashMap[Expression, Int] = HashMap()
       var slot : Int = 0
+      var joinMatrix =
+        Array.fill[Array[Expression]](children.size)(Array
+          .fill[Expression](children.size)(Literal(null, NullType)))
+
+      var otherPredicates = Array.fill[Array[Option[Expression]]](children.size)(Array
+        .fill[Option[Expression]](children.size)(None))
+
       conditions foreach {
         case condition =>
           val predicate = splitConjunctivePredicates(condition)
           predicate foreach {
             case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty =>
-            case EqualTo(l, r) if !joinsMap.contains(l) && !joinsMap.contains(r) =>
+            case EqualTo(l, r)
+              if !joinsMap.contains(l) && !joinsMap.contains(r) &&
+                getTableIndex(l) >=0 && getTableIndex(r) >=0 =>
               joinsMap.put(l, slot)
               joinsMap.put(r, slot)
               slot += 1
-          }
-      }
-      var joinKeys = new Array[Array[Expression]](children.size)
-        .map(_ => new Array[Expression](slot))
 
-      def getTableIndex(joinKey : Expression) : Int = {
-        for (i <- 0 to children.size) {
-          if (canEvaluate(joinKey, children(i))) {
-            return i
+              joinMatrix(getTableIndex(l))(getTableIndex(r)) = l
+              joinMatrix(getTableIndex(r))(getTableIndex(l)) = r
           }
-        }
-        return -1
+
+          var leftIndex: Int = -1
+          var rightIndex : Int = -1
+          val otherPredicate = predicate.filterNot {
+            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => false
+            case EqualTo(l, r) if getTableIndex(l) >= 0 && getTableIndex(r) >= 0 =>
+              leftIndex = getTableIndex(l)
+              rightIndex = getTableIndex(r)
+              true
+            case _ => false
+          }
+
+          if (leftIndex >= 0 && rightIndex >= 0) {
+            otherPredicates(leftIndex)(rightIndex) = otherPredicate.reduceOption(And)
+            otherPredicates(rightIndex)(leftIndex) = otherPredicate.reduceOption(And)
+          }
       }
+
+      var joinKeys = Array.fill[Array[Expression]](children.size)(Array
+        .fill[Expression](slot)(Literal(null, NullType)))
 
       joinsMap foreach {
-        case (joinKey, index) if getTableIndex(joinKey) >= 0 =>
+        case (joinKey, index) =>
           joinKeys(getTableIndex(joinKey))(index) = joinKey
       }
-      Some(joinKeys.map(_.toSeq).toSeq, conditions.map(Some(_)), children)
+      Some(joinKeys.map(_.toSeq).toSeq, joinMatrix.map(_.toSeq).toSeq,
+        otherPredicates.map(_.toSeq).toSeq, children)
     case _ => None
   }
 }
