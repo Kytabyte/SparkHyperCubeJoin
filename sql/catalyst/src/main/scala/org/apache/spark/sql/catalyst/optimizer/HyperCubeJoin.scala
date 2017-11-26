@@ -49,34 +49,35 @@ case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with Predicate
     * This method works for bushy trees and left/right deep trees.
     */
   private def extractInnerJoins(plan: LogicalPlan):
-    (Seq[LogicalPlan], Set[Expression]) = {
+    (Seq[LogicalPlan], Seq[Expression]) = {
 
     plan match {
       case Join(left, right, _: InnerLike, Some(cond)) =>
         val (leftPlans, leftConditions) = extractInnerJoins(left)
         val (rightPlans, rightConditions) = extractInnerJoins(right)
-        (leftPlans ++ rightPlans, splitConjunctivePredicates(cond).toSet ++
-          leftConditions ++ rightConditions)
+        (leftPlans ++ rightPlans, leftConditions ++
+          splitConjunctivePredicates(cond) ++ rightConditions)
       case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
         if projectList.forall(_.isInstanceOf[Attribute]) => {
         extractInnerJoins(j)
       }
       case _ =>
-        (Seq(plan), Set())
+        (Seq(plan), Seq())
     }
   }
 
 
   private def createHyperCubeJoin(plan: LogicalPlan): LogicalPlan = {
     val (children, conditions):
-      (Seq[LogicalPlan], Set[Expression]) = extractInnerJoins(plan)
+      (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
 
     plan match {
-      case Join(_, _, _, _) =>
+      case Join(_, _, _, _) if children.size > 2 =>
         MultiWayJoin(nodes = children, joinType = Inner, condition = conditions)
-      case Project(projectList, Join(_, _, _, _)) =>
+      case Project(projectList, Join(_, _, _, _)) if children.size > 2 =>
         Project(projectList,
           MultiWayJoin(nodes = children, joinType = Inner, condition = conditions))
+      case _ => plan
     }
   }
 }

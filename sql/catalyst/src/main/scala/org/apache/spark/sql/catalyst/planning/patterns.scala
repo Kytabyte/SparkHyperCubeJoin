@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.planning
 
+import scala.collection.mutable.HashMap
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
@@ -138,6 +140,81 @@ object ExtractEquiJoinKeys extends Logging with PredicateHelper {
       }
     case _ => None
   }
+}
+
+object ExtractMultiJoinKeys extends Logging with PredicateHelper {
+  /** (joinType, leftKeys, rightKeys, condition, leftChild, rightChild) */
+  type ReturnType =
+    (Seq[Seq[Expression]], Seq[Option[Expression]], Seq[LogicalPlan])
+
+  def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
+    case j @ MultiWayJoin(children, joinType, conditions) =>
+      logDebug(s"Considering join on: $conditions")
+      // Find equi-join predicates that can be evaluated before the join, and thus can be used
+      // as join keys.
+//    val joins : Iterator[(Seq[LogicalPlan], Expression)] =
+      // children.sliding(2).zip(conditions.iterator)
+      var joinsMap : HashMap[Expression, Int] = HashMap()
+      var slot : Int = 0
+      conditions foreach {
+        case condition =>
+          val predicate = splitConjunctivePredicates(condition)
+          predicate foreach {
+            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty =>
+            case EqualTo(l, r) if !joinsMap.contains(l) && !joinsMap.contains(r) =>
+              joinsMap.put(l, slot)
+              joinsMap.put(r, slot)
+              slot += 1
+          }
+      }
+      var joinKeys = new Array[Array[Expression]](children.size)
+        .map(_ => new Array[Expression](slot-1))
+
+      def getTableIndex(joinKey : Expression) : Int = {
+        for (i <- 0 to children.size) {
+          if (canEvaluate(joinKey, children(i))) {
+            return i
+          }
+        }
+        return -1
+      }
+
+      joinsMap foreach {
+        case (joinKey, index) if getTableIndex(joinKey) >= 0 =>
+          joinKeys(getTableIndex(joinKey))(index) = joinKey
+      }
+      Some(joinKeys.map(_.toSeq).toSeq, Seq.empty[Option[Expression]], children)
+    case _ => None
+  }
+
+      // var joinKeys = new scala.collection.mutable.ListBuffer()
+//      val joinKeys = joins.map {
+//        case (Seq(left, right), cond : Expression) =>
+//          val predicate = splitConjunctivePredicates(cond)
+//          val joinKey = predicate.flatMap {
+//            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => None
+//            case EqualTo(l, r) if canEvaluate(l, left) && canEvaluate(r, right) => Some((l, r))
+//            case EqualTo(l, r) if canEvaluate(l, right) && canEvaluate(r, left) => Some((r, l))
+//            case _ => None
+//          }
+//          val otherPredicate =    predicate.filterNot {
+//            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => false
+//            case EqualTo(l, r) =>
+//              canEvaluate(l, left) && canEvaluate(r, right) ||
+//                canEvaluate(l, right) && canEvaluate(r, left)
+//            case _ => false
+//          }
+//          joinKey
+//      }.toList.flatten
+//      if (joinKeys.nonEmpty) {
+//        val (leftKeys, rightKeys) = joinKeys.unzip
+//        logDebug(s"leftKeys:$leftKeys | rightKeys:$rightKeys")
+//        Some((leftKeys, rightKeys, Seq(None), children))
+//      } else {
+//        None
+//      }
+//    case _ => None
+//  }
 }
 
 /**

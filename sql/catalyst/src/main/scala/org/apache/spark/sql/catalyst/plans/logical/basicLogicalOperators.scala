@@ -379,7 +379,7 @@ case class Join(
 case class MultiWayJoin(
                        nodes: Seq[LogicalPlan],
                        joinType: JoinType,
-                       condition: Set[Expression]
+                       condition: Seq[Expression]
                        )
   // Create by Kyle Nov. 23, 2017
   extends MultaryNode with PredicateHelper {

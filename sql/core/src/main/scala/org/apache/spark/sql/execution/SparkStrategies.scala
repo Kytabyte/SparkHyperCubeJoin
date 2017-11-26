@@ -188,6 +188,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         joins.SortMergeJoinExec(
           leftKeys, rightKeys, joinType, condition, planLater(left), planLater(right)) :: Nil
 
+      // --- HyperCubeJoin ----------------------------------------------------------------
+      // Create by Kyle Nov 24, 2017
+
+      case ExtractMultiJoinKeys(joinKeys, condition, children)
+        if conf.hyperCubeJoinEnabled =>
+        joins.HyperCubeJoinExec(joinKeys, condition, children.map(planLater(_))) :: Nil
+
       // --- Without joining keys ------------------------------------------------------------
 
       // Pick BroadcastNestedLoopJoin if one side could be broadcasted
