@@ -18,11 +18,11 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
                                  condition: Option[Expression],
                                  left: SparkPlan,
                                  right: SparkPlan,
-                                 leftRDD: RDD[InternalRow],
-                                 rightRDD: RDD[InternalRow])
+                                 leftRDD: RDD[InternalRow] = null,
+                                 rightRDD: RDD[InternalRow] = null)
   extends BinaryExecNode with HashJoin {
 
-  private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
+   private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
     val buildDataSize = longMetric("buildDataSize")
     val buildTime = longMetric("buildTime")
     val start = System.nanoTime()
@@ -37,7 +37,19 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    leftRDD.zipPartitions(rightRDD) { (streamIter, buildIter) =>
+    val myLeftRDD = if (leftRDD == null) {
+      left.execute()
+    } else {
+      leftRDD
+    }
+
+    val myRightRDD = if (rightRDD == null) {
+      right.execute()
+    } else {
+      rightRDD
+    }
+
+    myLeftRDD.zipPartitions(myRightRDD) { (streamIter, buildIter) =>
       val hashed = buildHashedRelation(buildIter)
       join(streamIter, hashed, numOutputRows)
     }
