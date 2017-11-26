@@ -29,8 +29,8 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 /**
  * Performs a hash join of two child relations by first shuffling the data using the join keys.
  */
-case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
-                            joinMatrix: Seq[Seq[Expression]],
+case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
+                            joinKeys: Seq[Seq[Expression]],
                              conditions: Seq[Seq[Option[Expression]]],
                              nodes: Seq[SparkPlan])
   extends MultaryExecNode {
@@ -51,7 +51,7 @@ case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
     "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
 
   override def requiredChildDistribution: Seq[Distribution] =
-    joinKeys.map(joinKey => HyperCubeDistribution(joinKey))
+    mapKeys.map(mapKey => HyperCubeDistribution(mapKey))
 
   protected override def doExecute() : RDD[InternalRow] = {
 //    nodes.zipWithIndex.reduceLeft((left, right) => {
@@ -61,7 +61,7 @@ case class HyperCubeJoinExec(joinKeys: Seq[Seq[Expression]],
 //
 //    }
     for (i <- 1 to nodes.size) {
-      
+
     }
   }
 
