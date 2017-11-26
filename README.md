@@ -1,8 +1,8 @@
 # Apache Spark
 
-This repository is a copy version of Apache Spark. We will add a SQL Join
-optimizer, called HyperCube join, to optimize the multi-join case such that all
-tables can be joined in one-pass round shuffling. The original repository is
+This repository is a copy version of Apache Spark. We will add a new join
+algorithm called HyperCube join to optimize some multi-way join cases such that all
+tables can be joined in one round of shuffling. The original repository is
 <code>https://github.com/apache/spark</code>
 
 From Apache Spark GitHub Repository:
