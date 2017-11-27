@@ -149,39 +149,33 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
   type ReturnType =
     (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan, HashMap[LogicalPlan, Int])
 
-  var planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
-  var index : Int = 0
-
-  private def extractInnerJoins(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
-    plan match {
-      case Join(left, right, _: InnerLike, Some(cond)) =>
-        val (leftPlans, leftConditions) = extractInnerJoins(left)
-        val (rightPlans, rightConditions) = extractInnerJoins(right)
-        (leftPlans ++ rightPlans, leftConditions ++
-          splitConjunctivePredicates(cond) ++ rightConditions)
-      // case Join(left: Project(_, Join))
-      case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
-        if projectList.forall(_.isInstanceOf[Attribute]) => {
-        extractInnerJoins(j)
-      }
-      case _ =>
-        planIndexMap.put(plan, index)
-        index += 1
-        (Seq(plan), Seq())
-    }
-  }
+//  val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
+//  var index : Int = 0
+//
+//  private def extractInnerJoins(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
+//    plan match {
+//      case Join(left, right, _: InnerLike, Some(cond)) =>
+//        val (leftPlans, leftConditions) = extractInnerJoins(left)
+//        val (rightPlans, rightConditions) = extractInnerJoins(right)
+//        (leftPlans ++ rightPlans, leftConditions ++
+//          splitConjunctivePredicates(cond) ++ rightConditions)
+//      // case Join(left: Project(_, Join))
+//      case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+//        if projectList.forall(_.isInstanceOf[Attribute]) => {
+//        extractInnerJoins(j)
+//      }
+//      case _ =>
+//        planIndexMap.put(plan, index)
+//        index += 1
+//        (Seq(plan), Seq())
+//    }
+//  }
 
   def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
-    case j @ Join(left, right, _: InnerLike, Some(cond)) =>
-      logDebug(s"Considering join on: $cond")
-      // Find equi-join predicates that can be evaluated before the join, and thus can be used
-      // as join keys.
-
-      val (children, conditions):
-        (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
-
+    case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan, planIndexMap) =>
+      
       def getTableIndex(joinKey : Expression) : Int = {
-        for (i <- 0 until children.size) {
+        for (i <- children.indices) {
           if (canEvaluate(joinKey, children(i))) {
             i
           }
@@ -192,18 +186,17 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
       val joinsMap: HashMap[Expression, Int] = HashMap()
       var slot : Int = 0
 
-      conditions foreach {
-        case condition =>
-          val predicate = splitConjunctivePredicates(condition)
-          predicate foreach {
-            case EqualTo(l, r)
-              if !joinsMap.contains(l) && !joinsMap.contains(r) &&
-                getTableIndex(l) >=0 && getTableIndex(r) >=0 =>
-              joinsMap.put(l, slot)
-              joinsMap.put(r, slot)
-              slot += 1
-            case _ =>
-          }
+      conditions foreach { condition =>
+        val predicate = splitConjunctivePredicates(condition)
+        predicate foreach {
+          case EqualTo(l, r)
+            if !joinsMap.contains(l) && !joinsMap.contains(r) &&
+              getTableIndex(l) >=0 && getTableIndex(r) >=0 =>
+            joinsMap.put(l, slot)
+            joinsMap.put(r, slot)
+            slot += 1
+          case _ =>
+        }
       }
 
       val mapKeys = Array.fill[Array[Expression]](children.size)(Array
@@ -213,7 +206,18 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
         case (mapKey, index) =>
           mapKeys(getTableIndex(mapKey))(index) = mapKey
       }
-      Some(mapKeys.map(_.toSeq).toSeq, children, plan, planIndexMap)
+
+      Some(mapKeys.map(_.toSeq).toSeq, children, logicalPlan, planIndexMap)
+
+//    case j @ Join(left, right, _: InnerLike, Some(cond)) =>
+//      logDebug(s"Considering join on: $cond")
+//      // Find equi-join predicates that can be evaluated before the join, and thus can be used
+//      // as join keys.
+//
+//      val (children, conditions):
+//        (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
+//
+//      Some(mapKeys.map(_.toSeq).toSeq, children, plan, planIndexMap)
     case _ => None
   }
 }

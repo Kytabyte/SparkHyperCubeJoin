@@ -27,18 +27,25 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.internal.SQLConf
 
 /**
- * Created by Kyle on 2017-11-23.
+ * Created by Kyle on 2017-11-26.
  */
 case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with PredicateHelper{
+  val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()
+  var index: Int = 0
+
   def apply(plan: LogicalPlan): LogicalPlan = {
     if (!conf.hyperCubeJoinEnabled) {
       plan
     } else {
       plan transformDown {
         case j @ Join(_, _, _: InnerLike, Some(_)) =>
+          planIndexMap.clear()
+          index = 0
           createHyperCubeJoin(j)
         case p @ Project(projectList, Join(_, _, _: InnerLike, Some(_)))
           if projectList.forall(_.isInstanceOf[Attribute]) =>
+          planIndexMap.clear()
+          index = 0
           createHyperCubeJoin(p)
       }
     }
@@ -62,21 +69,26 @@ case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with Predicate
         extractInnerJoins(j)
       }
       case _ =>
+        planIndexMap.put(plan, index)
+        index += 1
         (Seq(plan), Seq())
     }
   }
 
 
   private def createHyperCubeJoin(plan: LogicalPlan): LogicalPlan = {
+
     val (children, conditions):
       (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
 
     plan match {
       case Join(_, _, _, _) if children.size > 2 =>
-        MultiWayJoin(nodes = children, joinType = Inner, condition = conditions)
+        val mapCopy = planIndexMap
+        MultiWayJoin(children, Inner, conditions, plan, mapCopy)
       case Project(projectList, Join(_, _, _, _)) if children.size > 2 =>
+        val mapCopy = planIndexMap
         Project(projectList,
-          MultiWayJoin(nodes = children, joinType = Inner, condition = conditions))
+          MultiWayJoin(children, Inner, conditions, plan, mapCopy))
       case _ => plan
     }
   }

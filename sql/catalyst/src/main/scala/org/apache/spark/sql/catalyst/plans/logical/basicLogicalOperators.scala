@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.plans.logical
 
+import scala.collection.mutable.HashMap
+
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
@@ -379,9 +381,12 @@ case class Join(
 case class MultiWayJoin(
                        nodes: Seq[LogicalPlan],
                        joinType: JoinType,
-                       condition: Seq[Expression]
+                       condition: Seq[Expression],
+                       plan: LogicalPlan,
+                       planIndexMap: HashMap[LogicalPlan, Int]
                        )
-  // Create by Kyle Nov. 23, 2017
+  // Create by Kyle Nov. 26, 2017
+  // Change constructor
   extends MultaryNode with PredicateHelper {
 
   override def output: Seq[Attribute] = {
