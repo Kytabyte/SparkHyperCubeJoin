@@ -194,14 +194,13 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
         case condition =>
           val predicate = splitConjunctivePredicates(condition)
           predicate foreach {
-            case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty =>
             case EqualTo(l, r)
               if !joinsMap.contains(l) && !joinsMap.contains(r) &&
                 getTableIndex(l) >=0 && getTableIndex(r) >=0 =>
               joinsMap.put(l, slot)
               joinsMap.put(r, slot)
               slot += 1
-
+            case _ =>
           }
       }
 

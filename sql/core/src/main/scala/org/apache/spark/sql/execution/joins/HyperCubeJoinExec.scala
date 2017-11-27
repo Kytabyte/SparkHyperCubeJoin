@@ -106,6 +106,8 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
       case Project(projectList, j @ Join(_, _, _: InnerLike, Some(_))) =>
         prepareHashJoinExec(j)
 
+      case _ => prepareHashJoinExec(plan)
+
     }
   }
 
