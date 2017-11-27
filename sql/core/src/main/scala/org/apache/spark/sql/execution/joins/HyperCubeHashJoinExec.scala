@@ -20,9 +20,10 @@ package org.apache.spark.sql.execution.joins
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+
 
  /**
   * Created by haotan on 17/11/26.
@@ -34,8 +35,8 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
                                  condition: Option[Expression],
                                  left: SparkPlan,
                                  right: SparkPlan,
-                                 leftRDD: RDD[InternalRow] = null,
-                                 rightRDD: RDD[InternalRow] = null)
+                                 leftRDD: Option[RDD[InternalRow]],
+                                 rightRDD: Option[RDD[InternalRow]])
   extends BinaryExecNode with HashJoin {
 
    private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
@@ -53,16 +54,16 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    val myLeftRDD = if (leftRDD == null) {
+    val myLeftRDD = if (leftRDD == None) {
       left.execute()
     } else {
-      leftRDD
+      leftRDD.get
     }
 
-    val myRightRDD = if (rightRDD == null) {
+    val myRightRDD = if (rightRDD == None) {
       right.execute()
     } else {
-      rightRDD
+      rightRDD.get
     }
 
     myLeftRDD.zipPartitions(myRightRDD) { (streamIter, buildIter) =>

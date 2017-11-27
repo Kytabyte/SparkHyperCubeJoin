@@ -19,15 +19,13 @@ package org.apache.spark.sql.execution.joins
 
 import scala.collection.mutable
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{And, Attribute, Coalesce, EqualNullSafe, EqualTo, Expression, Literal, PredicateHelper}
-import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys.{canEvaluate, logDebug, splitConjunctivePredicates}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, EqualTo, Expression, PredicateHelper}
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.{Join, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.execution.{BinaryExecNode, MultaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.{MultaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 
 
@@ -55,8 +53,9 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
 
   def prepareHashJoinExec(plan: LogicalPlan) : SparkPlan = {
     plan match {
-      case j @ Join(left, right, _: InnerLike, Some(condition)) =>
-        val predicates = condition.map(splitConjunctivePredicates)
+      case j @ Join(left, right, _: InnerLike, condition) =>
+        val predicates = condition.map(splitConjunctivePredicates).getOrElse(Nil)
+
         val joinKeys = predicates.flatMap {
           case EqualTo(l, r) if l.references.isEmpty || r.references.isEmpty => None
           case EqualTo(l, r) if canEvaluate(l, left) && canEvaluate(r, right) => Some((l, r))
@@ -90,15 +89,15 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
         }
 
         val leftRDD = if (leftRDDIndex == -1) {
-          null
+          None
         } else {
-          rdds(leftRDDIndex)
+          Some(rdds(leftRDDIndex))
         }
 
         val rightRDD = if (rightRDDIndex == -1) {
-          null
+          None
         } else {
-          rdds(rightRDDIndex)
+          Some(rdds(rightRDDIndex))
         }
 
         HyperCubeHashJoinExec(leftKeys, rightKeys, Inner, BuildLeft,
