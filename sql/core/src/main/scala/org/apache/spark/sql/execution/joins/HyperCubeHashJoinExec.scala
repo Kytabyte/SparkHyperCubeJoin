@@ -23,6 +23,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.metric.SQLMetrics
+
 
 
  /**
@@ -38,6 +40,12 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
                                  leftRDD: Option[RDD[InternalRow]],
                                  rightRDD: Option[RDD[InternalRow]])
   extends BinaryExecNode with HashJoin {
+
+   override lazy val metrics = Map(
+     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
+     "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
+
 
    private def buildHashedRelation(iter: Iterator[InternalRow]): HashedRelation = {
     val buildDataSize = longMetric("buildDataSize")

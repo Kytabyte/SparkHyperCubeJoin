@@ -242,8 +242,7 @@ object SparkSQLExample {
     val schemaString = "name age"
 
     // Generate the schema based on the string of schema
-    val fields = schemaString.split(" ")
-      .map(fieldName => StructField(fieldName, StringType, nullable = true))
+    val fields = schemaString.split(" ").map(fieldName => StructField(fieldName, StringType, nullable = true))
     val schema = StructType(fields)
 
     // Convert records of the RDD (people) to Rows

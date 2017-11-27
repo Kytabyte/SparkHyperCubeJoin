@@ -172,7 +172,9 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
 //  }
 
   def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
-    case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan, planIndexMap) =>
+    case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan) =>
+
+      val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
       
       def getTableIndex(joinKey : Expression) : Int = {
         var ret = -1
@@ -200,7 +202,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
       }
 
       val mapKeys = Array.fill[Array[Expression]](children.size)(Array
-        .fill[Expression](slot)(Literal(null, NullType)))
+        .fill[Expression](slot)(Alias(Literal.default(NullType), "null")()))
 
       joinsMap foreach {
         case (mapKey, index) if getTableIndex(mapKey) >= 0 =>

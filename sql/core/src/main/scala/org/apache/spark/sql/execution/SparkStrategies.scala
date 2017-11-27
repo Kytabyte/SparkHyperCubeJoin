@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution
 
+import scala.collection.mutable
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.InternalRow
@@ -36,7 +38,7 @@ import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.streaming.StreamingQuery
 
-import scala.collection.mutable
+
 
 /**
  * Converts a logical plan into zero or more SparkPlans.  This API is exposed for experimenting
@@ -195,7 +197,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
       case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, planIndexMap: mutable.HashMap[_, _])
         if conf.hyperCubeJoinEnabled =>
-        joins.HyperCubeJoinExec(mapKeys, logicalPlan, planIndexMap,
+        joins.HyperCubeJoinExec(mapKeys, logicalPlan,
           children.map(child => PlanLater(child))) :: Nil
 
       // --- Without joining keys ------------------------------------------------------------

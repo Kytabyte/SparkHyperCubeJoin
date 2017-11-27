@@ -258,10 +258,15 @@ object ShuffleExchange {
         rdd.mapPartitionsInternal { iter =>
           val hyperCubePartitioner = part.asInstanceOf[HyperCubePartitioner]
           val getPartitionKey = getPartitionKeyExtractor()
-          val mutablePair = new MutablePair[Int, InternalRow]()
           iter.flatMap { row =>
-            val idList = hyperCubePartitioner.getPartitionList(getPartitionKey(row))
-            idList.map( id => mutablePair.update(id, row))
+            val keys = getPartitionKey(row)
+            val myPar = newPartitioning
+            val idList = hyperCubePartitioner.getPartitionList(keys)
+            val finalResult = idList.map( id => {
+              val mutablePair = new MutablePair[Int, InternalRow]()
+              mutablePair.update(id, row)
+            })
+            finalResult
           }
         }
       } else {

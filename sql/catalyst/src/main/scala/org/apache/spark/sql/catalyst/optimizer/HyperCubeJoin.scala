@@ -30,8 +30,8 @@ import org.apache.spark.sql.internal.SQLConf
  * Created by Kyle on 2017-11-26.
  */
 case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with PredicateHelper{
-  val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()
-  var index: Int = 0
+  // val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()
+  // var index: Int = 0
 
   def apply(plan: LogicalPlan): LogicalPlan = {
     if (!conf.hyperCubeJoinEnabled) {
@@ -39,13 +39,13 @@ case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with Predicate
     } else {
       plan transformDown {
         case j @ Join(_, _, _: InnerLike, Some(_)) =>
-          planIndexMap.clear()
-          index = 0
+          // planIndexMap.clear()
+          // index = 0
           createHyperCubeJoin(j)
         case p @ Project(projectList, Join(_, _, _: InnerLike, Some(_)))
           if projectList.forall(_.isInstanceOf[Attribute]) =>
-          planIndexMap.clear()
-          index = 0
+          // planIndexMap.clear()
+          // index = 0
           createHyperCubeJoin(p)
       }
     }
@@ -69,8 +69,8 @@ case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with Predicate
         extractInnerJoins(j)
       }
       case _ =>
-        planIndexMap.put(plan, index)
-        index += 1
+        // planIndexMap.put(plan, index)
+        // index += 1
         (Seq(plan), Seq())
     }
   }
@@ -83,12 +83,12 @@ case class HyperCubeJoin(conf: SQLConf) extends Rule[LogicalPlan] with Predicate
 
     plan match {
       case Join(_, _, _, _) if children.size > 2 =>
-        val mapCopy = planIndexMap
-        MultiWayJoin(children, Inner, conditions, plan, mapCopy)
+        // val mapCopy = planIndexMap
+        MultiWayJoin(children, Inner, conditions, plan)
       case Project(projectList, Join(_, _, _, _)) if children.size > 2 =>
-        val mapCopy = planIndexMap
+        // val mapCopy = planIndexMap
         Project(projectList,
-          MultiWayJoin(children, Inner, conditions, plan, mapCopy))
+          MultiWayJoin(children, Inner, conditions, plan))
       case _ => plan
     }
   }

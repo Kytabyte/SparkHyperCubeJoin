@@ -53,7 +53,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
       case ClusteredDistribution(clustering) => HashPartitioning(clustering, numPartitions)
       case OrderedDistribution(ordering) => RangePartitioning(ordering, numPartitions)
         // Added by Hao: hard code parameter for now
-      case HyperCubeDistribution(clustering) => HyperCubePartitioning(clustering, 8, Seq(2, 2, 2))
+      case HyperCubeDistribution(clustering) => HyperCubePartitioning(clustering, 1, Seq(1, 1))
       case dist => sys.error(s"Do not know how to satisfy distribution $dist")
     }
   }

@@ -35,21 +35,34 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
  */
 case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
                              logicalPlan: LogicalPlan,
-                             planIndexMap: mutable.HashMap[LogicalPlan, Int],
+                             // planIndexMap: mutable.HashMap[LogicalPlan, Int],
                              nodes: Seq[SparkPlan])
   extends MultaryExecNode with PredicateHelper {
 
   override def output: Seq[Attribute] = nodes.map(_.output).reduce(_ ++ _)
 
-  override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
-    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
-
   override def requiredChildDistribution: Seq[Distribution] =
     mapKeys.map(mapKey => HyperCubeDistribution(mapKey))
 
   lazy val rdds : Seq[RDD[InternalRow]] = nodes.map(_.execute())
+  val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()
+  var index: Int = 0
+
+  private def extractInnerJoins(plan: LogicalPlan): Unit = {
+
+    plan match {
+      case Join(left, right, _: InnerLike, Some(cond)) =>
+        extractInnerJoins(left)
+        extractInnerJoins(right)
+      case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+        if projectList.forall(_.isInstanceOf[Attribute]) => {
+        extractInnerJoins(j)
+      }
+      case _ =>
+        planIndexMap.put(plan, index)
+        index += 1
+    }
+  }
 
   def prepareHashJoinExec(plan: LogicalPlan) : SparkPlan = {
     plan match {
@@ -112,8 +125,10 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
+    extractInnerJoins(logicalPlan)
     val execPlan = prepareHashJoinExec(logicalPlan)
     execPlan.execute()
+//    rdds(0)
   }
 }
 

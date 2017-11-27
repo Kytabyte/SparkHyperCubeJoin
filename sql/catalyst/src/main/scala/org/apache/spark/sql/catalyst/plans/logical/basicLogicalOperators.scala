@@ -382,8 +382,8 @@ case class MultiWayJoin(
                        nodes: Seq[LogicalPlan],
                        joinType: JoinType,
                        condition: Seq[Expression],
-                       plan: LogicalPlan,
-                       planIndexMap: HashMap[LogicalPlan, Int]
+                       plan: LogicalPlan
+                       // planIndexMap: HashMap[LogicalPlan, Int]
                        )
   // Create by Kyle Nov. 26, 2017
   // Change constructor
