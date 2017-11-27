@@ -18,6 +18,7 @@
 package org.apache.spark.sql.catalyst.planning
 
 import scala.collection.mutable.HashMap
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
@@ -180,13 +181,13 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
         (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
 
       def getTableIndex(joinKey : Expression) : Int = {
-        for (i <- 0 to children.size) {
+        for (i <- 0 until children.size) {
           if (canEvaluate(joinKey, children(i))) i
         }
         -1
       }
 
-      var joinsMap : HashMap[Expression, Int] = HashMap()
+      val joinsMap: HashMap[Expression, Int] = HashMap()
       var slot : Int = 0
 
       conditions foreach {
@@ -204,7 +205,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
           }
       }
 
-      var mapKeys = Array.fill[Array[Expression]](children.size)(Array
+      val mapKeys = Array.fill[Array[Expression]](children.size)(Array
         .fill[Expression](slot)(Literal(null, NullType)))
 
       joinsMap foreach {
