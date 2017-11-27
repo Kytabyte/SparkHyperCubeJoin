@@ -175,12 +175,13 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
     case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan, planIndexMap) =>
       
       def getTableIndex(joinKey : Expression) : Int = {
+        var ret = -1
         for (i <- children.indices) {
           if (canEvaluate(joinKey, children(i))) {
-            i
+            ret = i
           }
         }
-        -1
+        ret
       }
 
       val joinsMap: HashMap[Expression, Int] = HashMap()
