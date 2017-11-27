@@ -182,7 +182,9 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
 
       def getTableIndex(joinKey : Expression) : Int = {
         for (i <- 0 until children.size) {
-          if (canEvaluate(joinKey, children(i))) i
+          if (canEvaluate(joinKey, children(i))) {
+            i
+          }
         }
         -1
       }
