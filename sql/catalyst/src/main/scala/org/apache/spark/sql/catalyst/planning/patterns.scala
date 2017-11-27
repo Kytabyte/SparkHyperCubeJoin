@@ -153,7 +153,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
 
   private def extractInnerJoins(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
     plan match {
-      case Join(left: Join, right: Join, _: InnerLike, Some(cond)) =>
+      case Join(left, right, _: InnerLike, Some(cond)) =>
         val (leftPlans, leftConditions) = extractInnerJoins(left)
         val (rightPlans, rightConditions) = extractInnerJoins(right)
         (leftPlans ++ rightPlans, leftConditions ++
