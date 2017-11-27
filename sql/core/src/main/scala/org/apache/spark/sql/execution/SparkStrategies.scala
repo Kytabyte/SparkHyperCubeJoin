@@ -152,6 +152,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     }
 
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+      // --- HyperCubeJoin ----------------------------------------------------------------
+      // Modified by Kyle Nov 26, 2017
+
+      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, planIndexMap)
+        if conf.hyperCubeJoinEnabled && children.size > 2 =>
+        joins.HyperCubeJoinExec(mapKeys, logicalPlan, planIndexMap,
+          children.map(planLater(_))) :: Nil
 
       // --- BroadcastHashJoin --------------------------------------------------------------------
 
@@ -187,14 +194,6 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         if RowOrdering.isOrderable(leftKeys) =>
         joins.SortMergeJoinExec(
           leftKeys, rightKeys, joinType, condition, planLater(left), planLater(right)) :: Nil
-
-      // --- HyperCubeJoin ----------------------------------------------------------------
-      // Modified by Kyle Nov 26, 2017
-
-      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, planIndexMap)
-        if conf.hyperCubeJoinEnabled && children.size > 2 =>
-        joins.HyperCubeJoinExec(mapKeys, logicalPlan, planIndexMap,
-          children.map(planLater(_))) :: Nil
 
       // --- Without joining keys ------------------------------------------------------------
 
