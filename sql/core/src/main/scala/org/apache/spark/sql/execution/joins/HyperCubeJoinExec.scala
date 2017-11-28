@@ -113,7 +113,7 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
           Some(rdds(rightRDDIndex))
         }
 
-        HyperCubeHashJoinExec(leftKeys, rightKeys, Inner, BuildLeft,
+        HyperCubeHashJoinExec(leftKeys, rightKeys, Inner, BuildRight,
           otherPredicates.reduceOption(And), leftPlan, rightPlan, leftRDD, rightRDD)
 
       case Project(projectList, j @ Join(_, _, _: InnerLike, Some(_))) =>
