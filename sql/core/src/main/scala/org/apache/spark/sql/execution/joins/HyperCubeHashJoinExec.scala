@@ -62,13 +62,13 @@ case class HyperCubeHashJoinExec(leftKeys: Seq[Expression],
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    val myLeftRDD = if (leftRDD == None) {
+    val myLeftRDD = if (leftRDD.isEmpty) {
       left.execute()
     } else {
       leftRDD.get
     }
 
-    val myRightRDD = if (rightRDD == None) {
+    val myRightRDD = if (rightRDD.isEmpty) {
       right.execute()
     } else {
       rightRDD.get
