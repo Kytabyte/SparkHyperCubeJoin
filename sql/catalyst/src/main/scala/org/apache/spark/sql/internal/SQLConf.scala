@@ -123,7 +123,7 @@ object SQLConf {
     .createWithDefault(10L * 1024 * 1024)
 
   val HYPERCUBE_JOIN_ENABLED = buildConf("spark.sql.enableHyperCubeJoin")
-    .doc("When true, enable use of HyperCube Join, which is an optimzation for multiway join" +
+    .doc("When true, enable use of HyperCube Join, which is an optimization for multiway join" +
       "algorithm. ")
     .booleanConf
     .createWithDefault(true)
