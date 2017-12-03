@@ -147,7 +147,7 @@ object ExtractEquiJoinKeys extends Logging with PredicateHelper {
 object ExtractMultiJoinKeys extends Logging with PredicateHelper {
   /** (mapKeys, joinkeys, conditions, children) */
   type ReturnType =
-    (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan, HashMap[LogicalPlan, Int])
+    (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan)
 
 //  val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
 //  var index : Int = 0
@@ -174,7 +174,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
   def unapply(plan: LogicalPlan): Option[ReturnType] = plan match {
     case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan) =>
 
-      val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
+      // val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
       
       def getTableIndex(joinKey : Expression) : Int = {
         var ret = -1
@@ -209,7 +209,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
           mapKeys(getTableIndex(mapKey))(index) = mapKey
       }
 
-      Some(mapKeys.map(_.toSeq).toSeq, children, logicalPlan, planIndexMap)
+      Some(mapKeys.map(_.toSeq).toSeq, children, logicalPlan)
 
 //    case j @ Join(left, right, _: InnerLike, Some(cond)) =>
 //      logDebug(s"Considering join on: $cond")

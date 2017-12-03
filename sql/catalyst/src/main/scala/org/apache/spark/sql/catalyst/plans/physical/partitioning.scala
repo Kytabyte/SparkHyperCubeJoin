@@ -63,7 +63,8 @@ case class ClusteredDistribution(clustering: Seq[Expression]) extends Distributi
   * [[Expression Expressions]] will be co-located. This is a special form of cluster distribution
   * that require HyperCube partitioning
   */
-case class HyperCubeDistribution(clustering: Seq[Expression]) extends Distribution {
+case class HyperCubeDistribution(clustering: Seq[Expression],
+                                 hashRange: Seq[Int]) extends Distribution {
   require(
     clustering != Nil,
     "The clustering expressions of a ClusteredDistribution should not be Nil. " +
@@ -258,7 +259,7 @@ case class HyperCubePartitioning(expressions: Seq[Expression], numPartitions: In
 
   override def satisfies(required: Distribution): Boolean = required match {
     case UnspecifiedDistribution => true
-    case HyperCubeDistribution(requiredClustering) => true
+    case HyperCubeDistribution(requiredClustering, _) => true
     case _ => false
   }
 

@@ -36,13 +36,14 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
                              logicalPlan: LogicalPlan,
                              // planIndexMap: mutable.HashMap[LogicalPlan, Int],
-                             nodes: Seq[SparkPlan])
+                             nodes: Seq[SparkPlan],
+                             hashRange: Seq[Int])
   extends MultaryExecNode with PredicateHelper {
 
   override def output: Seq[Attribute] = nodes.map(_.output).reduce(_ ++ _)
 
   override def requiredChildDistribution: Seq[Distribution] =
-    mapKeys.map(mapKey => HyperCubeDistribution(mapKey))
+    mapKeys.map(mapKey => HyperCubeDistribution(mapKey, hashRange))
 
   lazy val rdds : Seq[RDD[InternalRow]] = nodes.map(_.execute())
   val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()

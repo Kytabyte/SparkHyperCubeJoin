@@ -155,7 +155,62 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case _ => false
     }
 
+    private def hyperCubeShuffleRange(children: Seq[LogicalPlan],
+                                      conditions: Seq[Seq[Expression]]) : Array[Int] = {
+
+      val numPartitions: Int = conf.numShufflePartitions
+      val numDimension: Int = conditions.length
+
+      def hashRangeOptimizer(candidate: Array[Int],
+                             numPartitions: Int,
+                             children: Seq[LogicalPlan],
+                             setIndex: Int): (Array[Int], BigInt) = {
+        var hashRange : Array[Int] = candidate
+        var workload: BigInt = Int.MaxValue
+
+        if (setIndex == candidate.length) {
+          // set workload
+          workload = children.zip(candidate).reduce((a, b) => {
+            a._1.stats(conf).sizeInBytes * a._2 +
+              b._1.stats(conf).sizeInBytes * b._2}) / candidate.sum
+
+          return (hashRange, workload)
+        }
+
+        var i: Int = 1
+        while (candidate.sum <= numPartitions) {
+          candidate(setIndex) = i
+          val (curHashRange, curWorkload) =
+            hashRangeOptimizer(candidate, numPartitions, children, setIndex)
+          if (curWorkload < workload ||
+            (curWorkload == workload && candidate.max < hashRange.max)) {
+
+            workload = curWorkload
+            hashRange = curHashRange
+          }
+          i += 1
+        }
+
+        (hashRange, workload)
+      }
+
+      val hashRange: (Array[Int], BigInt) =
+        hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, children, 0)
+      // scalastyle: off
+      println(hashRange)
+      // scalastyle: on
+      hashRange._1
+    }
+
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+
+      // --- HyperCubeJoin ----------------------------------------------------------------
+      // Modified by Kyle Nov 26, 2017
+
+      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan)
+        if conf.hyperCubeJoinEnabled =>
+        joins.HyperCubeJoinExec(mapKeys, logicalPlan,
+          children.map(child => PlanLater(child)), hyperCubeShuffleRange(children, mapKeys)) :: Nil
 
       // --- BroadcastHashJoin --------------------------------------------------------------------
 
@@ -192,13 +247,6 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         joins.SortMergeJoinExec(
           leftKeys, rightKeys, joinType, condition, planLater(left), planLater(right)) :: Nil
 
-      // --- HyperCubeJoin ----------------------------------------------------------------
-      // Modified by Kyle Nov 26, 2017
-
-      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, planIndexMap: mutable.HashMap[_, _])
-        if conf.hyperCubeJoinEnabled =>
-        joins.HyperCubeJoinExec(mapKeys, logicalPlan,
-          children.map(child => PlanLater(child))) :: Nil
 
       // --- Without joining keys ------------------------------------------------------------
 

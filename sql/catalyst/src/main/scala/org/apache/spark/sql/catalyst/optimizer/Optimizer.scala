@@ -113,10 +113,10 @@ abstract class Optimizer(sessionCatalog: SessionCatalog, conf: SQLConf)
       SimplifyCreateArrayOps,
       SimplifyCreateMapOps) ++
       extendedOperatorOptimizationRules: _*) ::
-    Batch("HyperCube Join", Once,
-      HyperCubeJoin(conf)) ::
     Batch("Join Reorder", Once,
       CostBasedJoinReorder(conf)) ::
+    Batch("HyperCube Join", Once,
+      HyperCubeJoin(conf)) ::
     Batch("Decimal Optimizations", fixedPoint,
       DecimalAggregates(conf)) ::
     Batch("Object Expressions Optimization", fixedPoint,
