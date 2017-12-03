@@ -155,50 +155,55 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case _ => false
     }
 
-    private def hyperCubeShuffleRange(children: Seq[LogicalPlan],
+    private def getChildrenSize(children: Seq[LogicalPlan]) : Seq[BigInt] = {
+      children.map(_.stats(conf).sizeInBytes)
+    }
+
+    private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
                                       conditions: Seq[Seq[Expression]]) : Array[Int] = {
 
-      val numPartitions: Int = conf.numShufflePartitions
+      // val numPartitions: Int = conf.numShufflePartitions
+      val numPartitions: Int = 4
       val numDimension: Int = conditions.length
 
       def hashRangeOptimizer(candidate: Array[Int],
                              numPartitions: Int,
-                             children: Seq[LogicalPlan],
-                             setIndex: Int): (Array[Int], BigInt) = {
-        var hashRange : Array[Int] = candidate
-        var workload: BigInt = Int.MaxValue
+                             childrenSize: Seq[BigInt],
+                             setIndex: Int): (Array[Int], Double) = {
+
+        var hashRange : Array[Int] = candidate.clone()
+        var workload: Double = Int.MaxValue
 
         if (setIndex == candidate.length) {
           // set workload
-          workload = children.zip(candidate).reduce((a, b) => {
-            a._1.stats(conf).sizeInBytes * a._2 +
-              b._1.stats(conf).sizeInBytes * b._2}) / candidate.sum
+          workload = childrenSize.zip(candidate)
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.sum).sum
 
-          return (hashRange, workload)
+          return (hashRange.clone(), workload)
         }
 
         var i: Int = 1
         while (candidate.sum <= numPartitions) {
-          candidate(setIndex) = i
+
+          //  println(candidate.mkString(", "))
           val (curHashRange, curWorkload) =
-            hashRangeOptimizer(candidate, numPartitions, children, setIndex)
+            hashRangeOptimizer(candidate, numPartitions, childrenSize, setIndex + 1)
           if (curWorkload < workload ||
             (curWorkload == workload && candidate.max < hashRange.max)) {
 
             workload = curWorkload
-            hashRange = curHashRange
+            hashRange = curHashRange.clone()
+            // println(workload)
           }
           i += 1
+          candidate(setIndex) = i
         }
-
+        candidate(setIndex) = 1
         (hashRange, workload)
       }
-
-      val hashRange: (Array[Int], BigInt) =
-        hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, children, 0)
-      // scalastyle: off
-      println(hashRange)
-      // scalastyle: on
+      
+      val hashRange: (Array[Int], Double) =
+        hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, childrenSize, 0)
       hashRange._1
     }
 
@@ -210,7 +215,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case ExtractMultiJoinKeys(mapKeys, children, logicalPlan)
         if conf.hyperCubeJoinEnabled =>
         joins.HyperCubeJoinExec(mapKeys, logicalPlan,
-          children.map(child => PlanLater(child)), hyperCubeShuffleRange(children, mapKeys)) :: Nil
+          children.map(child => PlanLater(child)),
+          hyperCubeShuffleRange(getChildrenSize(children), mapKeys)) :: Nil
 
       // --- BroadcastHashJoin --------------------------------------------------------------------
 
