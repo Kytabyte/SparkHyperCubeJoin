@@ -162,8 +162,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
                                       conditions: Seq[Seq[Expression]]) : Array[Int] = {
 
-      // val numPartitions: Int = conf.numShufflePartitions
-      val numPartitions: Int = 4
+      val numPartitions: Int = conf.numShufflePartitions
+      // val numPartitions: Int = 4
       val numDimension: Int = conditions.length
 
       def hashRangeOptimizer(candidate: Array[Int],
@@ -201,7 +201,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         candidate(setIndex) = 1
         (hashRange, workload)
       }
-      
+
       val hashRange: (Array[Int], Double) =
         hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, childrenSize, 0)
       hashRange._1
