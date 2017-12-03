@@ -177,13 +177,14 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         if (setIndex == candidate.length) {
           // set workload
           workload = childrenSize.zip(candidate)
-            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.sum).sum
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
 
+          println(s"current workload ${candidate.mkString(s", ")}, ${workload}")
           return (hashRange.clone(), workload)
         }
 
         var i: Int = 1
-        while (candidate.sum <= numPartitions) {
+        while (candidate.product <= numPartitions) {
 
           //  println(candidate.mkString(", "))
           val (curHashRange, curWorkload) =
