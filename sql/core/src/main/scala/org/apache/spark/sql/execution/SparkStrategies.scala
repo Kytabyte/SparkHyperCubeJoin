@@ -162,8 +162,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
                                       conditions: Seq[Seq[Expression]]) : Array[Int] = {
 
-      val numPartitions: Int = conf.numShufflePartitions
+      // val numPartitions: Int = conf.numShufflePartitions
       // val numPartitions: Int = 4
+      val numPartitions: Int = conf.hyperCubeShuffleRange
       val numDimension: Int = conditions.length
 
       def hashRangeOptimizer(candidate: Array[Int],
@@ -178,23 +179,17 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           // set workload
           workload = childrenSize.zip(candidate)
             .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
-
-          println(s"current workload ${candidate.mkString(s", ")}, ${workload}")
           return (hashRange.clone(), workload)
         }
 
         var i: Int = 1
         while (candidate.product <= numPartitions) {
-
-          //  println(candidate.mkString(", "))
           val (curHashRange, curWorkload) =
             hashRangeOptimizer(candidate, numPartitions, childrenSize, setIndex + 1)
           if (curWorkload < workload ||
             (curWorkload == workload && candidate.max < hashRange.max)) {
-
             workload = curWorkload
             hashRange = curHashRange.clone()
-            // println(workload)
           }
           i += 1
           candidate(setIndex) = i
@@ -208,13 +203,21 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       hashRange._1
     }
 
+    private def preferHyperCubeShuffle(plan: LogicalPlan,
+                                       nodes: Seq[LogicalPlan],
+                                       shuffleRange: Seq[Int]): Boolean = {
+      true
+    }
+
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
 
       // --- HyperCubeJoin ----------------------------------------------------------------
       // Modified by Kyle Nov 26, 2017
 
       case ExtractMultiJoinKeys(mapKeys, children, logicalPlan)
-        if conf.hyperCubeJoinEnabled =>
+        if conf.hyperCubeJoinEnabled
+          && preferHyperCubeShuffle(logicalPlan, children,
+            hyperCubeShuffleRange(getChildrenSize(children), mapKeys)) =>
         joins.HyperCubeJoinExec(mapKeys, logicalPlan,
           children.map(child => PlanLater(child)),
           hyperCubeShuffleRange(getChildrenSize(children), mapKeys)) :: Nil

@@ -123,10 +123,16 @@ object SQLConf {
     .createWithDefault(10L * 1024 * 1024)
 
   val HYPERCUBE_JOIN_ENABLED = buildConf("spark.sql.enableHyperCubeJoin")
-    .doc("When true, enable use of HyperCube Join, which is an optimization for multiway join" +
+    .doc("When true, enable use of HyperCube Join, which is an optimization for multiway join " +
       "algorithm. ")
     .booleanConf
     .createWithDefault(true)
+
+  val HYPERCUBE_SHUFFLE_RANGE = buildConf("spark.sql.hyperCubeShuffleRange")
+    .doc("Define the shuffle range of hypercube join, which can be used to tune the replication " +
+      "size.")
+    .intConf
+    .createWithDefault(32)
 
   val LIMIT_SCALE_UP_FACTOR = buildConf("spark.sql.limit.scaleUpFactor")
     .internal()
@@ -975,6 +981,8 @@ class SQLConf extends Serializable with Logging {
   def autoBroadcastJoinThreshold: Long = getConf(AUTO_BROADCASTJOIN_THRESHOLD)
 
   def hyperCubeJoinEnabled: Boolean = getConf(HYPERCUBE_JOIN_ENABLED)
+
+  def hyperCubeShuffleRange: Int = getConf(HYPERCUBE_SHUFFLE_RANGE)
 
   def limitScaleUpFactor: Int = getConf(LIMIT_SCALE_UP_FACTOR)
 
