@@ -115,8 +115,8 @@ abstract class Optimizer(sessionCatalog: SessionCatalog, conf: SQLConf)
       extendedOperatorOptimizationRules: _*) ::
     Batch("Join Reorder", Once,
       CostBasedJoinReorder(conf)) ::
-    Batch("HyperCube Join", Once,
-      HyperCubeJoin(conf)) ::
+//    Batch("HyperCube Join", Once,
+//      HyperCubeJoin(conf)) ::
     Batch("Decimal Optimizations", fixedPoint,
       DecimalAggregates(conf)) ::
     Batch("Object Expressions Optimization", fixedPoint,
