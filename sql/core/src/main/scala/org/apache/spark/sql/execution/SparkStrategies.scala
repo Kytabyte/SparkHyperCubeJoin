@@ -159,11 +159,44 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       children.map(_.stats(conf).sizeInBytes)
     }
 
+    private def getChildrenRowCount(children: Seq[LogicalPlan]) : Seq[BigInt] = {
+      children.map(_.stats(conf).rowCount.get)
+    }
+
+
+    private def extractComputationCost(plan: LogicalPlan,
+                                       partitionNumber: Int,
+                                       round: Int,
+                                       rangeMap: Map[LogicalPlan, Int]) : Double = {
+      plan match {
+        case Join(left, right, _: InnerLike, Some(cond)) =>
+          val leftCost = extractComputationCost(left, partitionNumber, round, rangeMap)
+          val rightCost = extractComputationCost(right, partitionNumber, round, rangeMap)
+
+          val leftCard = left.stats(conf).rowCount.get.toDouble * rangeMap.getOrElse(left, 1)
+          val rightCard = right.stats(conf).rowCount.get.toDouble * rangeMap.getOrElse(right, 1)
+
+          // can replace sum to any cost function
+          round * (leftCard + rightCard) / partitionNumber.toDouble + leftCost + rightCost
+
+        case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+          if projectList.forall(_.isInstanceOf[Attribute]) => {
+          extractComputationCost(j, partitionNumber, round, rangeMap)
+        }
+        case _ => 0
+      }
+    }
+
+    private def getCostRatio(commCost: Double,
+                             computeCost: Double,
+                             commCostBase: Double,
+                             computeCostBase: Double) : Double =
+      0.7 * commCost / commCostBase + 0.3 * computeCost / computeCostBase
+
+
     private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
                                       conditions: Seq[Seq[Expression]]) : Array[Int] = {
 
-      // val numPartitions: Int = conf.numShufflePartitions
-      // val numPartitions: Int = 4
       val numPartitions: Int = conf.hyperCubeShuffleRange
       val numDimension: Int = conditions.length
 
@@ -203,24 +236,123 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       hashRange._1
     }
 
-    private def preferHyperCubeShuffle(plan: LogicalPlan,
-                                       nodes: Seq[LogicalPlan],
-                                       shuffleRange: Seq[Int]): Boolean = {
-      true
+
+    private def hyperCubeShuffleRange(plan : LogicalPlan,
+                                      children: Seq[LogicalPlan],
+                                      childrenSize: Seq[BigInt],
+                                      childrenRowCount: Seq[BigInt],
+                                      conditions: Seq[Seq[Expression]]) :
+    (Array[Int], Double, Double) = {
+
+      val numPartitions: Int = conf.hyperCubeShuffleRange
+      val numDimension: Int = conditions.length
+
+      def hashRangeOptimizer(plan : LogicalPlan,
+                             candidate: Array[Int],
+                             numPartitions: Int,
+                             childrenSize: Seq[BigInt],
+                             childrenRowCount: Seq[BigInt],
+                             setIndex: Int): (Array[Int], Double, Double) = {
+
+        var hashRange : Array[Int] = candidate.clone()
+        var commCost: Double = Double.MaxValue
+        var computeCost: Double = Double.MaxValue
+        val planRangeMap = children.zip(candidate).toMap
+
+
+        if (setIndex == candidate.length) {
+          // for hyperCube round is always equal to 1
+          computeCost = extractComputationCost(plan, candidate.product, 1, planRangeMap)
+
+          commCost = childrenSize.zip(candidate)
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+          return (hashRange.clone(), commCost, computeCost)
+        }
+
+        var i: Int = 1
+        while (candidate.product <= numPartitions) {
+          val (curHashRange, curCommCost, curComputeCost) =
+            hashRangeOptimizer(plan, candidate, numPartitions,
+              childrenSize, childrenRowCount, setIndex + 1)
+          val costRatio = getCostRatio(curCommCost, curComputeCost, commCost, computeCost)
+          if ( costRatio < 1 ||
+            (costRatio == 1 && candidate.max < hashRange.max)) {
+            commCost = curCommCost
+            computeCost = curComputeCost
+            hashRange = curHashRange.clone()
+          }
+          i += 1
+          candidate(setIndex) = i
+        }
+        candidate(setIndex) = 1
+        (hashRange, commCost, computeCost)
+      }
+
+      hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions,
+        childrenSize, childrenRowCount, 0)
+
     }
+
+    private def preferHyperCubeShuffle(plan: LogicalPlan,
+                                       children: Seq[LogicalPlan],
+                                       mapKeys: Seq[Seq[Expression]],
+                                       shuffleRange: Seq[Int]): Boolean = {
+
+      val hyperCubeCostVector = hyperCubeShuffleRange(plan, children,
+        getChildrenSize(children), getChildrenRowCount(children), mapKeys)
+
+      val optimizedRange = hyperCubeCostVector._1;
+
+
+      Array.copy(optimizedRange, 0, shuffleRange, 0, optimizedRange.size)
+      val planRangeMap = children.zip(shuffleRange).toMap
+
+      def extractCommunicationCost(plan: LogicalPlan) : Double = {
+        plan match {
+          case j@Join(left, right, _: InnerLike, Some(cond)) =>
+            val leftCost = extractCommunicationCost(left)
+            val rightCost = extractCommunicationCost(right)
+            // can replate sum to any cost function
+            leftCost + rightCost + j.stats(conf).sizeInBytes.toDouble
+          case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+            if projectList.forall(_.isInstanceOf[Attribute]) => {
+            extractCommunicationCost(j)
+          }
+          case _ => plan.stats(conf).sizeInBytes.toDouble
+        }
+      }
+
+      val cascadePartitionNum = conf.numShufflePartitions
+      val cpuNum = conf.hyperCubeShuffleRange
+
+      val hyperCubeCommCost = hyperCubeCostVector._2
+      val cascadeCommCost = extractCommunicationCost(plan) - plan.stats(conf).sizeInBytes.toDouble
+
+
+      val hyperCubeComputeCost = hyperCubeCostVector._3
+      val cascadeComputeCost = extractComputationCost(plan,
+        cascadePartitionNum, Math.ceil(cascadePartitionNum / cpuNum.toDouble).toInt,
+        Map[LogicalPlan, Int]())
+
+
+      val ratio = getCostRatio(hyperCubeCommCost, hyperCubeComputeCost,
+        cascadeCommCost, cascadeComputeCost)
+
+      ratio < 1
+    }
+
+
 
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
 
       // --- HyperCubeJoin ----------------------------------------------------------------
       // Modified by Kyle Nov 26, 2017
 
-      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan)
+      case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, hashRange)
         if conf.hyperCubeJoinEnabled
-          && preferHyperCubeShuffle(logicalPlan, children,
-            hyperCubeShuffleRange(getChildrenSize(children), mapKeys)) =>
+          && preferHyperCubeShuffle(logicalPlan, children, mapKeys, hashRange) =>
         joins.HyperCubeJoinExec(mapKeys, logicalPlan,
-          children.map(child => PlanLater(child)),
-          hyperCubeShuffleRange(getChildrenSize(children), mapKeys)) :: Nil
+          children.map(child => PlanLater(child)), hashRange) :: Nil
 
       // --- BroadcastHashJoin --------------------------------------------------------------------
 

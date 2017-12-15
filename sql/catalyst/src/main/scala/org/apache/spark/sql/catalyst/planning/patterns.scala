@@ -17,8 +17,6 @@
 
 package org.apache.spark.sql.catalyst.planning
 
-import scala.collection.mutable.HashMap
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
@@ -145,31 +143,26 @@ object ExtractEquiJoinKeys extends Logging with PredicateHelper {
 
 
 object ExtractMultiJoinKeys extends Logging with PredicateHelper {
-  /** (mapKeys, joinkeys, conditions, children) */
+  /** (mapKeys, joinkeys, conditions, children, hashRangeBuffer) */
   type ReturnType =
-    (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan)
+    (Seq[Seq[Expression]], Seq[LogicalPlan], LogicalPlan, Array[Int])
 
-//  val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
-//  var index : Int = 0
-
-  private def extractInnerJoins(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
+  private def extractChildrenTobeJoined(plan: LogicalPlan) : (Seq[LogicalPlan], Seq[Expression]) = {
     plan match {
       case Join(left, right, _: InnerLike, Some(cond)) =>
-        val (leftPlans, leftConditions) = extractInnerJoins(left)
-        val (rightPlans, rightConditions) = extractInnerJoins(right)
+        val (leftPlans, leftConditions) = extractChildrenTobeJoined(left)
+        val (rightPlans, rightConditions) = extractChildrenTobeJoined(right)
         (leftPlans ++ rightPlans, leftConditions ++
           splitConjunctivePredicates(cond) ++ rightConditions)
-      // case Join(left: Project(_, Join))
       case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
         if projectList.forall(_.isInstanceOf[Attribute]) => {
-        extractInnerJoins(j)
+        extractChildrenTobeJoined(j)
       }
       case _ =>
-//        planIndexMap.put(plan, index)
-//        index += 1
         (Seq(plan), Seq())
     }
   }
+
 
   private def getTableIndex(joinKey : Expression,
                             nodes: Seq[LogicalPlan]) : Int = {
@@ -214,14 +207,14 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
     case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan) =>
       // val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
       val mapKeys: Seq[Seq[Expression]] = createMapKeys(children, conditions)
-      Some(mapKeys, children, logicalPlan)
+      Some(mapKeys, children, logicalPlan, new Array[Int](mapKeys.size))
 
     case j @ Join(_, _, _: InnerLike, Some(cond)) =>
       // logDebug(s"Considering join on: $cond")
       val (children, conditions):
-        (Seq[LogicalPlan], Seq[Expression]) = extractInnerJoins(plan)
+        (Seq[LogicalPlan], Seq[Expression]) = extractChildrenTobeJoined(plan)
       val mapKeys: Seq[Seq[Expression]] = createMapKeys(children, conditions)
-      Some(mapKeys, children, plan)
+      Some(mapKeys, children, plan, new Array[Int](mapKeys.size))
 
     case _ => None
   }
