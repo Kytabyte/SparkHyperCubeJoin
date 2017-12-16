@@ -207,7 +207,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
     case j @ MultiWayJoin(children, _: InnerLike, conditions, logicalPlan) =>
       // val planIndexMap: HashMap[LogicalPlan, Int] = new HashMap()
       val mapKeys: Seq[Seq[Expression]] = createMapKeys(children, conditions)
-      Some(mapKeys, children, logicalPlan, new Array[Int](mapKeys.size))
+      Some(mapKeys, children, logicalPlan, new Array[Int](mapKeys.head.size))
 
     case j @ Join(_, _, _: InnerLike, Some(cond)) =>
       // logDebug(s"Considering join on: $cond")
