@@ -173,8 +173,11 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           val leftCost = extractComputationCost(left, partitionNumber, round, rangeMap)
           val rightCost = extractComputationCost(right, partitionNumber, round, rangeMap)
 
-          val leftCard = left.stats(conf).rowCount.get.toDouble * rangeMap.getOrElse(left, 1)
-          val rightCard = right.stats(conf).rowCount.get.toDouble * rangeMap.getOrElse(right, 1)
+          val leftReplicationNum = rangeMap.getOrElse(left, 1)
+          val rightReplicationNum = rangeMap.getOrElse(right, 1)
+
+          val leftCard = left.stats(conf).rowCount.get.toDouble * leftReplicationNum
+          val rightCard = right.stats(conf).rowCount.get.toDouble * rightReplicationNum
 
           // can replace sum to any cost function
           round * (leftCard + rightCard) / partitionNumber.toDouble + leftCost + rightCost
@@ -296,7 +299,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     private def preferHyperCubeShuffle(plan: LogicalPlan,
                                        children: Seq[LogicalPlan],
                                        mapKeys: Seq[Seq[Expression]],
-                                       shuffleRange: Seq[Int]): Boolean = {
+                                       shuffleRange: Array[Int]): Boolean = {
 
       val hyperCubeCostVector = hyperCubeShuffleRange(plan, children,
         getChildrenSize(children), getChildrenRowCount(children), mapKeys)
@@ -314,9 +317,10 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             val rightCost = extractCommunicationCost(right)
             // can replate sum to any cost function
             leftCost + rightCost + j.stats(conf).sizeInBytes.toDouble
-          case Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+          case p@Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
             if projectList.forall(_.isInstanceOf[Attribute]) => {
-            extractCommunicationCost(j)
+            extractCommunicationCost(j) - j.stats(conf).sizeInBytes.toDouble
+            + p.stats(conf).sizeInBytes.toDouble
           }
           case _ => plan.stats(conf).sizeInBytes.toDouble
         }
