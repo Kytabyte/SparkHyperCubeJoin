@@ -214,7 +214,7 @@ object ExtractMultiJoinKeys extends Logging with PredicateHelper {
       val (children, conditions):
         (Seq[LogicalPlan], Seq[Expression]) = extractChildrenTobeJoined(plan)
       val mapKeys: Seq[Seq[Expression]] = createMapKeys(children, conditions)
-      Some(mapKeys, children, plan, new Array[Int](mapKeys.size))
+      Some(mapKeys, children, plan, new Array[Int](mapKeys.head.size))
 
     case _ => None
   }

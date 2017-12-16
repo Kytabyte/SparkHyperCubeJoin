@@ -197,47 +197,47 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       0.7 * commCost / commCostBase + 0.3 * computeCost / computeCostBase
 
 
-    private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
-                                      conditions: Seq[Seq[Expression]]) : Array[Int] = {
-
-      val numPartitions: Int = conf.hyperCubeShuffleRange
-      val numDimension: Int = conditions.length
-
-      def hashRangeOptimizer(candidate: Array[Int],
-                             numPartitions: Int,
-                             childrenSize: Seq[BigInt],
-                             setIndex: Int): (Array[Int], Double) = {
-
-        var hashRange : Array[Int] = candidate.clone()
-        var workload: Double = Int.MaxValue
-
-        if (setIndex == candidate.length) {
-          // set workload
-          workload = childrenSize.zip(candidate)
-            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
-          return (hashRange.clone(), workload)
-        }
-
-        var i: Int = 1
-        while (candidate.product <= numPartitions) {
-          val (curHashRange, curWorkload) =
-            hashRangeOptimizer(candidate, numPartitions, childrenSize, setIndex + 1)
-          if (curWorkload < workload ||
-            (curWorkload == workload && candidate.max < hashRange.max)) {
-            workload = curWorkload
-            hashRange = curHashRange.clone()
-          }
-          i += 1
-          candidate(setIndex) = i
-        }
-        candidate(setIndex) = 1
-        (hashRange, workload)
-      }
-
-      val hashRange: (Array[Int], Double) =
-        hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, childrenSize, 0)
-      hashRange._1
-    }
+//    private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
+//                                      conditions: Seq[Seq[Expression]]) : Array[Int] = {
+//
+//      val numPartitions: Int = conf.hyperCubeShuffleRange
+//      val numDimension: Int = conditions.length
+//
+//      def hashRangeOptimizer(candidate: Array[Int],
+//                             numPartitions: Int,
+//                             childrenSize: Seq[BigInt],
+//                             setIndex: Int): (Array[Int], Double) = {
+//
+//        var hashRange : Array[Int] = candidate.clone()
+//        var workload: Double = Int.MaxValue
+//
+//        if (setIndex == candidate.length) {
+//          // set workload
+//          workload = childrenSize.zip(candidate)
+//            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+//          return (hashRange.clone(), workload)
+//        }
+//
+//        var i: Int = 1
+//        while (candidate.product <= numPartitions) {
+//          val (curHashRange, curWorkload) =
+//            hashRangeOptimizer(candidate, numPartitions, childrenSize, setIndex + 1)
+//          if (curWorkload < workload ||
+//            (curWorkload == workload && candidate.max < hashRange.max)) {
+//            workload = curWorkload
+//            hashRange = curHashRange.clone()
+//          }
+//          i += 1
+//          candidate(setIndex) = i
+//        }
+//        candidate(setIndex) = 1
+//        (hashRange, workload)
+//      }
+//
+//      val hashRange: (Array[Int], Double) =
+//        hashRangeOptimizer(Array.fill[Int](numDimension)(1), numPartitions, childrenSize, 0)
+//      hashRange._1
+//    }
 
 
     private def hyperCubeShuffleRange(plan : LogicalPlan,
@@ -248,11 +248,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     (Array[Int], Double, Double) = {
 
       val numPartitions: Int = conf.hyperCubeShuffleRange
-      val numDimension: Int = conditions.length
+      // val numDimension: Int = conditions.length
+      val numDimension: Int = conditions.head.length
 
       def hashRangeOptimizer(plan : LogicalPlan,
                              candidate: Array[Int],
                              numPartitions: Int,
+                             conditions: Seq[Seq[Expression]],
                              childrenSize: Seq[BigInt],
                              childrenRowCount: Seq[BigInt],
                              setIndex: Int): (Array[Int], Double, Double) = {
@@ -260,14 +262,25 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         var hashRange : Array[Int] = candidate.clone()
         var commCost: Double = Double.MaxValue
         var computeCost: Double = Double.MaxValue
-        val planRangeMap = children.zip(candidate).toMap
+
+        val replication: Seq[Int] = conditions.map(cond => {
+          cond.zip(candidate).map({
+              case (null, factor) => factor
+              case _ => 1
+            }
+          ).product
+        })
+        // val planRangeMap = children.zip(candidate).toMap
+        val planRangeMap = children.zip(replication).toMap
 
 
         if (setIndex == candidate.length) {
           // for hyperCube round is always equal to 1
           computeCost = extractComputationCost(plan, candidate.product, 1, planRangeMap)
 
-          commCost = childrenSize.zip(candidate)
+          // commCost = childrenSize.zip(candidate)
+          //  .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+          commCost = childrenSize.zip(replication)
             .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
           return (hashRange.clone(), commCost, computeCost)
         }
@@ -275,7 +288,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         var i: Int = 1
         while (candidate.product <= numPartitions) {
           val (curHashRange, curCommCost, curComputeCost) =
-            hashRangeOptimizer(plan, candidate, numPartitions,
+            hashRangeOptimizer(plan, candidate, numPartitions, conditions,
               childrenSize, childrenRowCount, setIndex + 1)
           val costRatio = getCostRatio(curCommCost, curComputeCost, commCost, computeCost)
           if ( costRatio < 1 ||
@@ -291,7 +304,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         (hashRange, commCost, computeCost)
       }
 
-      hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions,
+      hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions, conditions,
         childrenSize, childrenRowCount, 0)
 
     }
@@ -304,20 +317,20 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       val hyperCubeCostVector = hyperCubeShuffleRange(plan, children,
         getChildrenSize(children), getChildrenRowCount(children), mapKeys)
 
-      val optimizedRange = hyperCubeCostVector._1;
+      val optimizedRange = hyperCubeCostVector._1
 
 
-      Array.copy(optimizedRange, 0, shuffleRange, 0, optimizedRange.size)
+      Array.copy(optimizedRange, 0, shuffleRange, 0, optimizedRange.length)
       val planRangeMap = children.zip(shuffleRange).toMap
 
       def extractCommunicationCost(plan: LogicalPlan) : Double = {
         plan match {
-          case j@Join(left, right, _: InnerLike, Some(cond)) =>
+          case j @ Join(left, right, _: InnerLike, Some(cond)) =>
             val leftCost = extractCommunicationCost(left)
             val rightCost = extractCommunicationCost(right)
-            // can replate sum to any cost function
+            // can replace sum to any cost function
             leftCost + rightCost + j.stats(conf).sizeInBytes.toDouble
-          case p@Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
+          case p @ Project(projectList, j @ Join(_, _, _: InnerLike, Some(cond)))
             if projectList.forall(_.isInstanceOf[Attribute]) => {
             extractCommunicationCost(j) - j.stats(conf).sizeInBytes.toDouble
             + p.stats(conf).sizeInBytes.toDouble
