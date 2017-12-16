@@ -194,7 +194,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
                              computeCost: Double,
                              commCostBase: Double,
                              computeCostBase: Double) : Double =
-      0.7 * commCost / commCostBase + 0.3 * computeCost / computeCostBase
+      conf.communicationWeight * commCost / commCostBase +
+        conf.computationWeight * computeCost / computeCostBase
+
 
 
 //    private def hyperCubeShuffleRange(childrenSize: Seq[BigInt],
@@ -281,7 +283,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           // commCost = childrenSize.zip(candidate)
           //  .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
           commCost = childrenSize.zip(replication)
-            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble).sum
           return (hashRange.clone(), commCost, computeCost)
         }
 

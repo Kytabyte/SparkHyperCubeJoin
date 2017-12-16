@@ -134,6 +134,18 @@ object SQLConf {
     .intConf
     .createWithDefault(32)
 
+  val COMMUNICATION_COST_WEIGHT = buildConf("spark.sql.communicationWeight")
+    .doc("Define the shuffle range of hypercube join, which can be used to tune the replication " +
+      "size.")
+    .doubleConf
+    .createWithDefault(0.5)
+
+  val COMPUTATION_COST_WEIGHT = buildConf("spark.sql.computationWeight")
+    .doc("Define the shuffle range of hypercube join, which can be used to tune the replication " +
+      "size.")
+    .doubleConf
+    .createWithDefault(0.5)
+
   val LIMIT_SCALE_UP_FACTOR = buildConf("spark.sql.limit.scaleUpFactor")
     .internal()
     .doc("Minimal increase rate in number of partitions between attempts when executing a take " +
@@ -983,6 +995,10 @@ class SQLConf extends Serializable with Logging {
   def hyperCubeJoinEnabled: Boolean = getConf(HYPERCUBE_JOIN_ENABLED)
 
   def hyperCubeShuffleRange: Int = getConf(HYPERCUBE_SHUFFLE_RANGE)
+
+  def communicationWeight: Double = getConf(COMMUNICATION_COST_WEIGHT)
+
+  def computationWeight: Double = getConf(COMPUTATION_COST_WEIGHT)
 
   def limitScaleUpFactor: Int = getConf(LIMIT_SCALE_UP_FACTOR)
 
