@@ -196,10 +196,31 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
                              computeCostBase: Double) : Double = {
       val communicationTime: Double = conf.hyperCubeCommTime.toDouble
       val computationTime: Double = conf.hyperCubeCPUTime.toDouble
+      val shuffleMode: String = conf.hyperCubeShuffleRangeMode
+      val costRatioMode: String = conf.hyperCubeCostRatioMode
+      val communicationCostRatio: Double = conf.communicationWeight
+      val computationCostRatio: Double = conf.computationWeight
 
-      communicationTime / (communicationTime + computationTime) * commCost / commCostBase +
-        computationTime / (communicationTime + computationTime) * computeCost / computeCostBase
-
+      shuffleMode match {
+        case "random" =>
+          0.5d
+        case "sizeOnly" =>
+          commCost / commCostBase
+        case "optimal" =>
+          costRatioMode match {
+            case "manual" =>
+              communicationCostRatio * commCost / commCostBase +
+                computationCostRatio * computeCost / computeCostBase
+            case "auto" =>
+              communicationTime / (communicationTime + computationTime) * commCost / commCostBase +
+                computationTime / (communicationTime + computationTime) *
+                  computeCost / computeCostBase
+            case _ =>
+              throw new Exception("choose cost ratio mode from manual or auto")
+          }
+        case _ =>
+          throw new Exception("choose shuffle mode from sizeOnly or optimal")
+      }
     }
 
 
@@ -208,7 +229,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 //                                      conditions: Seq[Seq[Expression]]) : Array[Int] = {
 //
 //      val numPartitions: Int = conf.hyperCubeShuffleRange
-//      val numDimension: Int = conditions.length
+//      val numDimension: Int = conditions.head.length
 //
 //      def hashRangeOptimizer(candidate: Array[Int],
 //                             numPartitions: Int,
@@ -283,12 +304,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
         if (setIndex == candidate.length) {
           // for hyperCube round is always equal to 1
-          computeCost = extractComputationCost(plan, candidate.product, 1, planRangeMap)
+          computeCost = extractComputationCost(plan, candidate.product, 1, planRangeMap) /
+            candidate.product.toDouble
 
           // commCost = childrenSize.zip(candidate)
           //  .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
           commCost = childrenSize.zip(replication)
-            .map(pair => pair._1.doubleValue() * pair._2.toDouble).sum
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
           return (hashRange.clone(), commCost, computeCost)
         }
 
@@ -311,8 +333,31 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         (hashRange, commCost, computeCost)
       }
 
-      hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions, conditions,
-        childrenSize, childrenRowCount, 0)
+      val shuffleMode: String = conf.hyperCubeShuffleRangeMode
+
+      shuffleMode match {
+        case "random" =>
+          var range: Int = numPartitions
+          val hashRange: Array[Int] = new Array[Int](numDimension)
+          val rand = scala.util.Random
+          for (i <- hashRange.indices) {
+            val nextInt: Int = range match {
+              case n if n < 2 => 1
+              case _ => rand.nextInt(range - 1) + 1
+            }
+            hashRange(i) = nextInt
+            range = range / nextInt
+          }
+          (hashRange, 1, 1)
+        case "sizeOnly" =>
+          hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions, conditions,
+            childrenSize, childrenRowCount, 0)
+        case "optimal" =>
+          hashRangeOptimizer(plan, Array.fill[Int](numDimension)(1), numPartitions, conditions,
+            childrenSize, childrenRowCount, 0)
+        case _ =>
+          throw new Exception("choose shuffle mode from sizeOnly or optimal")
+      }
 
     }
 
@@ -362,7 +407,17 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       val ratio = getCostRatio(hyperCubeCommCost, hyperCubeComputeCost,
         cascadeCommCost, cascadeComputeCost)
 
-      ratio < 1
+      val shuffleMode: String = conf.hyperCubeShuffleRangeMode
+      shuffleMode match {
+        case "random" =>
+          true
+        case "sizeOnly" =>
+          true
+        case "optimal" =>
+          ratio < 1
+        case _ =>
+          throw new Exception("wrong shuffle mode")
+      }
     }
 
 

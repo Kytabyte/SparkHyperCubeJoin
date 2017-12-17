@@ -133,11 +133,7 @@ case class ShuffleExchange(
     }
     buildTime += (System.nanoTime() - start) / 1000000
     val commTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_COMM_TIME)
-    val newCommTime: Long = newPartitioning match {
-      case HyperCubePartitioning(_, _, _) => commTime + buildTime.value
-      case _ => commTime
-    }
-    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_COMM_TIME, newCommTime)
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_COMM_TIME, commTime + buildTime.value)
     cachedShuffleRDD
   }
 }
