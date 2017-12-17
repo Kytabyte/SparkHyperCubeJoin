@@ -18,16 +18,15 @@
 package org.apache.spark.sql.execution.joins
 
 import scala.collection.mutable.ArrayBuffer
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.execution.{BinaryExecNode, CodegenSupport,
-ExternalAppendOnlyUnsafeRowArray, RowIterator, SparkPlan}
+import org.apache.spark.sql.execution.{BinaryExecNode, CodegenSupport, ExternalAppendOnlyUnsafeRowArray, RowIterator, SparkPlan}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.internal.SQLConf.HYPERCUBE_SHUFFLE_CPU_TIME
 import org.apache.spark.util.collection.BitSet
 
 /**
@@ -42,7 +41,8 @@ case class SortMergeJoinExec(
     right: SparkPlan) extends BinaryExecNode with CodegenSupport {
 
   override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "executeTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to execute local join"))
 
   override def output: Seq[Attribute] = {
     joinType match {
@@ -138,7 +138,9 @@ case class SortMergeJoinExec(
     val numOutputRows = longMetric("numOutputRows")
     val spillThreshold = getSpillThreshold
     val inMemoryThreshold = getInMemoryThreshold
-    left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
+    val buildTime = longMetric("executeTime")
+    val start = System.nanoTime()
+    val executedRDD = left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val boundCondition: (InternalRow) => Boolean = {
         condition.map { cond =>
           newPredicate(cond, left.output ++ right.output).eval _
@@ -367,6 +369,10 @@ case class SortMergeJoinExec(
       }
 
     }
+    buildTime += (System.nanoTime() - start) / 1000000
+    val cpuTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_CPU_TIME)
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_CPU_TIME, cpuTime + buildTime.value)
+    executedRDD
   }
 
   override def supportCodegen: Boolean = {

@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.internal.SQLConf.HYPERCUBE_SHUFFLE_CPU_TIME
 
 /**
  * Performs a hash join of two child relations by first shuffling the data using the join keys.
@@ -42,7 +43,8 @@ case class ShuffledHashJoinExec(
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
     "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size of build side"),
-    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"))
+    "buildTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to build hash map"),
+    "executeTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to execute local join"))
 
   override def requiredChildDistribution: Seq[Distribution] =
     ClusteredDistribution(leftKeys) :: ClusteredDistribution(rightKeys) :: Nil
@@ -62,9 +64,16 @@ case class ShuffledHashJoinExec(
 
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    streamedPlan.execute().zipPartitions(buildPlan.execute()) { (streamIter, buildIter) =>
+    val buildTime = longMetric("executeTime")
+    val start = System.nanoTime()
+    val executedRDD = streamedPlan.execute()
+      .zipPartitions(buildPlan.execute()) { (streamIter, buildIter) =>
       val hashed = buildHashedRelation(buildIter)
       join(streamIter, hashed, numOutputRows)
     }
+    buildTime += (System.nanoTime() - start) / 1000000
+    val cpuTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_CPU_TIME)
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_CPU_TIME, cpuTime + buildTime.value)
+    executedRDD
   }
 }

@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, CodegenSupport, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.internal.SQLConf.HYPERCUBE_SHUFFLE_CPU_TIME
 import org.apache.spark.sql.types.LongType
 
 /**
@@ -46,7 +47,8 @@ case class BroadcastHashJoinExec(
   extends BinaryExecNode with HashJoin with CodegenSupport {
 
   override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
+    "executeTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to execute local join"))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -61,12 +63,18 @@ case class BroadcastHashJoinExec(
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
 
+    val buildTime = longMetric("executeTime")
+    val start = System.nanoTime()
     val broadcastRelation = buildPlan.executeBroadcast[HashedRelation]()
-    streamedPlan.execute().mapPartitions { streamedIter =>
+    val executedPlan = streamedPlan.execute().mapPartitions { streamedIter =>
       val hashed = broadcastRelation.value.asReadOnlyCopy()
       TaskContext.get().taskMetrics().incPeakExecutionMemory(hashed.estimatedSize)
       join(streamedIter, hashed, numOutputRows)
     }
+    buildTime += (System.nanoTime() - start) / 1000000
+    val cpuTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_CPU_TIME)
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_CPU_TIME, cpuTime + buildTime.value)
+    executedPlan
   }
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
