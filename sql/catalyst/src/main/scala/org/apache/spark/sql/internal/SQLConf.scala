@@ -134,6 +134,18 @@ object SQLConf {
     .intConf
     .createWithDefault(32)
 
+  val HYPERCUBE_SHUFFLE_CPU_TIME = buildConf("spark.sql.hyperCubeShuffleCPUTime")
+    .internal()
+    .doc("Accumulating cpu time of the cpu time of local join after hypercube shuffling")
+    .longConf
+    .createWithDefault(1L)
+
+  val HYPERCUBE_SHUFFLE_COMM_TIME = buildConf("spark.sql.hyperCubeShuffleCommTime")
+    .internal()
+    .doc("Accumalating communication time (shuffle time) of the the hypercube shuffling")
+    .longConf
+    .createWithDefault(1L)
+
   val COMMUNICATION_COST_WEIGHT = buildConf("spark.sql.communicationWeight")
     .doc("Define the shuffle range of hypercube join, which can be used to tune the replication " +
       "size.")
@@ -995,6 +1007,10 @@ class SQLConf extends Serializable with Logging {
   def hyperCubeJoinEnabled: Boolean = getConf(HYPERCUBE_JOIN_ENABLED)
 
   def hyperCubeShuffleRange: Int = getConf(HYPERCUBE_SHUFFLE_RANGE)
+
+  def hyperCubeCPUTime: Long = getConf(HYPERCUBE_SHUFFLE_CPU_TIME)
+
+  def hyperCubeCommTime: Long = getConf(HYPERCUBE_SHUFFLE_COMM_TIME)
 
   def communicationWeight: Double = getConf(COMMUNICATION_COST_WEIGHT)
 

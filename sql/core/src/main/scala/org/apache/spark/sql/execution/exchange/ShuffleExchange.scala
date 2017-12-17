@@ -29,8 +29,11 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeProjection, U
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.joins.HashedRelation
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.internal.SQLConf._
 import org.apache.spark.util.MutablePair
+
 
 /**
  * Performs a shuffle that will result in the desired `newPartitioning`.
@@ -44,7 +47,8 @@ case class ShuffleExchange(
   //       e.g. it can be null on the Executor side
 
   override lazy val metrics = Map(
-    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"))
+    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
+    "shuffleTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to shuffle data"))
 
   override def nodeName: String = {
     val extraInfo = coordinator match {
@@ -114,6 +118,8 @@ case class ShuffleExchange(
 
   protected override def doExecute(): RDD[InternalRow] = attachTree(this, "execute") {
     // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
+    val buildTime = longMetric("shuffleTime")
+    val start = System.nanoTime()
     if (cachedShuffleRDD == null) {
       cachedShuffleRDD = coordinator match {
         case Some(exchangeCoordinator) =>
@@ -125,6 +131,13 @@ case class ShuffleExchange(
           preparePostShuffleRDD(shuffleDependency)
       }
     }
+    buildTime += (System.nanoTime() - start) / 1000000
+    val commTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_COMM_TIME)
+    val newCommTime: Long = newPartitioning match {
+      case HyperCubePartitioning(_, _, _) => commTime + buildTime.value
+      case _ => commTime
+    }
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_COMM_TIME, newCommTime)
     cachedShuffleRDD
   }
 }

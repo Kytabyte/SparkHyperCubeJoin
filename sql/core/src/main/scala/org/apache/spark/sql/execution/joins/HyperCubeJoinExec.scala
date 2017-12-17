@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{Join, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{MultaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.internal.SQLConf._
 
 
 
@@ -44,6 +45,9 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
 
   override def requiredChildDistribution: Seq[Distribution] =
     mapKeys.map(mapKey => HyperCubeDistribution(mapKey, hashRange))
+
+  override lazy val metrics = Map(
+    "executeTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to execute local join"))
 
   lazy val rdds : Seq[RDD[InternalRow]] = nodes.map(_.execute())
   val planIndexMap: mutable.HashMap[LogicalPlan, Int] = new mutable.HashMap()
@@ -128,8 +132,14 @@ case class HyperCubeJoinExec(mapKeys: Seq[Seq[Expression]],
   protected override def doExecute(): RDD[InternalRow] = {
     extractInnerJoins(logicalPlan)
     val execPlan = prepareHashJoinExec(logicalPlan)
-    execPlan.execute()
-//    rdds(0)
+    val buildTime = longMetric("executeTime")
+    val start = System.nanoTime()
+    val executedRDD = execPlan.execute()
+    buildTime += (System.nanoTime() - start) / 1000000
+    val cpuTime: Long = sqlContext.conf.getConf(HYPERCUBE_SHUFFLE_CPU_TIME)
+    sqlContext.conf.setConf(HYPERCUBE_SHUFFLE_CPU_TIME, cpuTime + buildTime.value)
+
+    executedRDD
   }
 }
 

@@ -193,9 +193,14 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     private def getCostRatio(commCost: Double,
                              computeCost: Double,
                              commCostBase: Double,
-                             computeCostBase: Double) : Double =
-      conf.communicationWeight * commCost / commCostBase +
-        conf.computationWeight * computeCost / computeCostBase
+                             computeCostBase: Double) : Double = {
+      val communicationTime: Double = conf.hyperCubeCommTime.toDouble
+      val computationTime: Double = conf.hyperCubeCPUTime.toDouble
+
+      communicationTime / (communicationTime + computationTime) * commCost / commCostBase +
+        computationTime / (communicationTime + computationTime) * computeCost / computeCostBase
+
+    }
 
 
 
