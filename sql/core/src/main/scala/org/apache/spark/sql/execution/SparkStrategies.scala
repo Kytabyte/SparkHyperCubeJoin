@@ -202,6 +202,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       val communicationCostRatio: Double = conf.communicationWeight
       val computationCostRatio: Double = conf.computationWeight
 
+      println(s"current communicationTime ${communicationTime}, computationTime ${computationTime}")
+
       shuffleMode match {
         case "random" =>
           0.5d
@@ -421,8 +423,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
 
 
-      val ratio = getCostRatio(hyperCubeCommCost, hyperCubeComputeCost,
-        cascadeCommCost, cascadeComputeCost)
+      val ratio = conf.hyperCubeJoinForced match {
+        case true => 0.5
+        case false => getCostRatio(hyperCubeCommCost, hyperCubeComputeCost,
+          cascadeCommCost, cascadeComputeCost)
+      }
+
+
 
       val shuffleMode: String = conf.hyperCubeShuffleRangeMode
 
@@ -451,7 +458,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       // Modified by Kyle Nov 26, 2017
 
       case ExtractMultiJoinKeys(mapKeys, children, logicalPlan, hashRange)
-        if conf.hyperCubeJoinEnabled
+        if conf.hyperCubeJoinEnabled && children.size > 2
           && preferHyperCubeShuffle(logicalPlan, children, mapKeys, hashRange) =>
         joins.HyperCubeJoinExec(mapKeys, logicalPlan,
           children.map(child => PlanLater(child)), hashRange) :: Nil
