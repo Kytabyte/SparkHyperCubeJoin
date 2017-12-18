@@ -37,6 +37,7 @@ import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight}
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.streaming.StreamingQuery
+import org.apache.spark.sql.types.NullType
 
 
 
@@ -295,7 +296,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
         val replication: Seq[Int] = conditions.map(cond => {
           cond.zip(candidate).map({
-              case (null, factor) => factor
+              case (key, factor) if key.dataType == NullType => factor
               case _ => 1
             }
           ).product
@@ -325,7 +326,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
                 .map(pair => pair._1.doubleValue() * pair._2.toDouble).sum
           }
 
-          println(s"current hashRange ${hashRange}, commCost ${commCost}, compCost ${computeCost}")
+          println(s"current hashRange ${hashRange.mkString(", ")}, commCost ${commCost}, compCost ${computeCost}")
           return (hashRange.clone(), commCost, computeCost)
         }
 
@@ -425,7 +426,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
       val shuffleMode: String = conf.hyperCubeShuffleRangeMode
 
-      println(s"\nchosen optimized hashRange ${optimizedRange}, shuffle mode ${shuffleMode}, " +
+      println(s"\nchosen optimized hashRange ${optimizedRange.mkString(", ")}, shuffle mode ${shuffleMode}, " +
         s"cascade commCost ${cascadeCommCost}, hypercube commCost ${hyperCubeCommCost}, " +
         s"cascade cpuCost ${cascadeComputeCost}, hypercube cpuCost ${hyperCubeComputeCost}," +
         s"ratio ${ratio}")
