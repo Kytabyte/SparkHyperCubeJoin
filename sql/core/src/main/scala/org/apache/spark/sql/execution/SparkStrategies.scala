@@ -216,8 +216,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
                 computationCostRatio * computeCost / computeCostBase
             case "auto" =>
               communicationTime / (communicationTime + computationTime) * commCost / commCostBase +
-                computationTime / (communicationTime + computationTime) *
-                  computeCost / computeCostBase
+                computationTime / (communicationTime + computationTime) * computeCost / computeCostBase
             case _ =>
               throw new Exception("choose cost ratio mode from manual or auto")
           }
@@ -319,14 +318,17 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
           // commCost = childrenSize.zip(candidate)
           //  .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
-          commCost = shuffleMode match {
-            case "sizeOnly" =>
-              childrenSize.zip(replication)
-                .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
-            case _ =>
-              childrenSize.zip(replication)
-                .map(pair => pair._1.doubleValue() * pair._2.toDouble).sum
-          }
+          commCost = childrenSize.zip(replication)
+            .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+
+//          commCost = shuffleMode match {
+//            case "sizeOnly" =>
+//              childrenSize.zip(replication)
+//                .map(pair => pair._1.doubleValue() * pair._2.toDouble / candidate.product).sum
+//            case _ =>
+//              childrenSize.zip(replication)
+//                .map(pair => pair._1.doubleValue() * pair._2.toDouble).sum
+//          }
 
           println(s"current hashRange ${hashRange.mkString(", ")}, commCost ${commCost}, compCost ${computeCost}")
           return (hashRange.clone(), commCost, computeCost)
@@ -413,7 +415,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       val cpuNum = conf.hyperCubeShuffleRange
 
       val hyperCubeCommCost = hyperCubeCostVector._2
-      val cascadeCommCost = extractCommunicationCost(plan) - plan.stats(conf).sizeInBytes.toDouble
+      val cascadeCommCost = (extractCommunicationCost(plan) -
+        plan.stats(conf).sizeInBytes.toDouble) / cpuNum
 
 
       val hyperCubeComputeCost = hyperCubeCostVector._3
